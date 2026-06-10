@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/api/">
+    <Project Path="api/Helmsman.Api/Helmsman.Api.csproj" />
+  </Folder>
+</Solution>
