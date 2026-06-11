@@ -89,9 +89,9 @@ This tool talks to real clusters, so the safety properties are deliberate, not i
 |---|---|
 | Context list (k9s-style) from kubeconfig | ✅ Done |
 | Namespace picker | ✅ Done |
-| Pod list (status, ready, restarts, node, age) | ✅ Done |
+| **Live** pod list (watch → SignalR, incremental deltas) | ✅ Done |
 | Live log streaming (SignalR) | ⏳ Next |
-| CPU / memory (metrics.k8s.io) | ⏳ Planned |
+| CPU / memory (metrics.k8s.io, polled) | ⏳ Planned |
 | Deployments / HPA with replica counts | ⏳ Planned |
 
 ## License

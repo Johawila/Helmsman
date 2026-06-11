@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import PodTable from '@/components/PodTable'
-import { Button } from '@/components/ui/button'
+import Spinner from '@/components/Spinner'
 import {
   Select,
   SelectContent,
@@ -8,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchNamespaces, fetchPods, type PodInfo } from '@/lib/api'
+import { fetchNamespaces, type PodInfo } from '@/lib/api'
+import { useLivePods, type LiveStatus } from '@/lib/useLivePods'
 
 interface ClusterViewProps {
   context: string
@@ -18,35 +19,18 @@ interface ClusterViewProps {
 export default function ClusterView({ context, defaultNamespace }: ClusterViewProps) {
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [namespace, setNamespace] = useState<string>('')
-  const [pods, setPods] = useState<PodInfo[]>([])
-  const [loadingPods, setLoadingPods] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [nsError, setNsError] = useState<string | null>(null)
+  const { pods, status, loaded } = useLivePods(context, namespace)
 
   useEffect(() => {
-    setError(null)
+    setNsError(null)
     fetchNamespaces(context)
       .then((ns) => {
         setNamespaces(ns)
         setNamespace(pickDefault(ns, defaultNamespace))
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setNsError(String(e)))
   }, [context, defaultNamespace])
-
-  useEffect(() => {
-    if (!namespace) {
-      return
-    }
-    loadPods(context, namespace)
-  }, [context, namespace])
-
-  function loadPods(ctx: string, ns: string) {
-    setLoadingPods(true)
-    setError(null)
-    fetchPods(ctx, ns)
-      .then(setPods)
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoadingPods(false))
-  }
 
   return (
     <div className="space-y-4">
@@ -63,22 +47,58 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!namespace || loadingPods}
-          onClick={() => loadPods(context, namespace)}
-        >
-          {loadingPods ? 'Refreshing…' : 'Refresh'}
-        </Button>
-        {!loadingPods && namespace && (
+        {namespace && <LiveBadge status={status} />}
+        {namespace && loaded && (
           <span className="text-sm text-muted-foreground">{pods.length} pods</span>
         )}
       </div>
 
-      {error && <p className="font-mono text-destructive">{error}</p>}
-      {namespace && <PodTable pods={pods} />}
+      {nsError && <p className="font-mono text-destructive">{nsError}</p>}
+      {namespace && !nsError && <PodArea status={status} loaded={loaded} pods={pods} />}
     </div>
+  )
+}
+
+function PodArea({
+  status,
+  loaded,
+  pods,
+}: {
+  status: LiveStatus
+  loaded: boolean
+  pods: PodInfo[]
+}) {
+  if (status === 'error') {
+    return (
+      <p className="text-sm text-destructive">
+        Lost the cluster stream. Check your credentials (for EKS, run{' '}
+        <code className="font-mono">aws sso login</code>), then reselect the namespace.
+      </p>
+    )
+  }
+  if (!loaded) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner label={status === 'reconnecting' ? 'Reconnecting…' : 'Loading pods…'} />
+      </div>
+    )
+  }
+  return <PodTable pods={pods} />
+}
+
+function LiveBadge({ status }: { status: LiveStatus }) {
+  const view: Record<LiveStatus, { dot: string; label: string; pulse: boolean }> = {
+    connecting: { dot: 'bg-amber-500', label: 'connecting…', pulse: true },
+    live: { dot: 'bg-green-500', label: 'live', pulse: true },
+    reconnecting: { dot: 'bg-amber-500', label: 'reconnecting…', pulse: true },
+    error: { dot: 'bg-red-500', label: 'disconnected', pulse: false },
+  }
+  const { dot, label, pulse } = view[status]
+  return (
+    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+      <span className={`size-2 rounded-full ${dot} ${pulse ? 'animate-pulse' : ''}`} />
+      {label}
+    </span>
   )
 }
 

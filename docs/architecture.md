@@ -43,25 +43,34 @@ read-only tool this small, the onion's compile-time boundaries didn't earn their
 1. The frontend `GET /api/contexts` — this reads **only the local kubeconfig file**, no cluster
    call. Each context is returned with its cluster, default namespace, and an `isCurrent` flag.
 2. The user selects a context.
-3. Cluster-touching endpoints (pods, logs, metrics — *not yet built*) take the chosen context
-   name and ask `KubeClientFactory.CreateClient(contextName)` for a client bound to exactly
-   that context. There is **no `current-context` fallback** — an unknown or empty name throws.
+3. Cluster-touching code takes the chosen context name and asks
+   `KubeClientFactory.CreateClient(contextName)` for a client bound to exactly that context. There
+   is **no `current-context` fallback** — an unknown or empty name throws.
 
 This explicit-context rule is the core safety property; see [ADR 002](./adrs/002-read-only-explicit-context.md).
 
-## Frontend
+## Streaming-first (live data)
 
-Vite + React + TypeScript. `src/lib/api.ts` is the typed API client; `src/App.tsx` renders the
-context list. The Vite dev server proxies `/api` (REST) and `/hubs` (SignalR, for live logs)
-to the API on `:5206`, so the browser only ever sees one origin and there's no CORS in dev.
+Helmsman is **streaming-first**: resource lists are live, not polled. See
+[ADR 004](./adrs/004-streaming-first.md).
 
-## Live logs (planned)
+| Data | Cluster mechanism | Transport |
+|---|---|---|
+| Pods, deployments, events | list + **watch** → deltas | **SignalR** stream (`/hubs/*`) |
+| Logs | log **follow** stream | **SignalR** stream |
+| CPU / memory | poll (`metrics.k8s.io` has no watch) | SignalR push on a timer |
+| Context / namespace lists | one-shot list | plain **REST** (`GET`) |
 
-Log streaming is the architecturally interesting piece and is built first among the
-cluster-touching features: `ReadNamespacedPodLogAsync(follow: true)` yields a `Stream` in
-Infrastructure, pumped to the browser over a **SignalR** hub (`@microsoft/signalr` client).
-Once streaming works end to end, the remaining features (pods, metrics, deployments) are
-plain request/response REST.
+**Live pods** (`/hubs/pods`, the `PodsHub.StreamPods` method) is the built example:
+`ClusterReader.WatchPodsAsync` lists for a snapshot + `resourceVersion`, then watches from it,
+yielding `PodEvent`s (`Snapshot`, then `Added`/`Modified`/`Deleted`). It resyncs (re-list →
+snapshot) when the watch expires. The client hook `useLivePods` applies events into a keyed map
+and surfaces a connection status; SignalR's `CancellationToken` stops the watch when the client
+navigates away. The Vite dev server proxies `/api` (REST) and `/hubs` (WebSocket) to `:5206`, so
+the browser sees one origin and there's no CORS in dev.
+
+**Logs (next)** reuse this exact plumbing: `ReadNamespacedPodLogWithHttpMessagesAsync(follow: true)`
+yields a `Stream` in `Kube/`, pumped over a SignalR hub to a log-viewer panel.
 
 ## What's intentionally absent
 

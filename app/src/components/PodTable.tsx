@@ -35,7 +35,9 @@ export default function PodTable({ pods }: PodTableProps) {
             <TableCell className="font-mono">{pod.name}</TableCell>
             <TableCell>
               <span className="flex items-center gap-2">
-                <span className={`size-2 rounded-full ${phaseDot(pod.phase)}`} />
+                <span
+                  className={`size-2 rounded-full ${phaseDot(pod.phase)} ${pod.phase === 'Running' ? 'animate-pulse' : ''}`}
+                />
                 {pod.phase}
               </span>
             </TableCell>
