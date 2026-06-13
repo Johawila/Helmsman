@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import DeploymentTable from '@/components/DeploymentTable'
+import CronJobTable from '@/components/CronJobTable'
+import JobTable from '@/components/JobTable'
 import LogSheet from '@/components/LogSheet'
 import PodTable from '@/components/PodTable'
 import Spinner from '@/components/Spinner'
+import WorkloadTable from '@/components/WorkloadTable'
 import {
   Select,
   SelectContent,
@@ -10,15 +12,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchNamespaces, type DeploymentInfo, type PodInfo, type PodMetricsInfo } from '@/lib/api'
+import {
+  fetchNamespaces,
+  resolvePod,
+  type CronJobInfo,
+  type JobInfo,
+  type PodInfo,
+  type PodMetricsInfo,
+  type WorkloadInfo,
+} from '@/lib/api'
 import { useLiveResource, type LiveStatus } from '@/lib/useLiveResource'
 import { usePodMetrics } from '@/lib/usePodMetrics'
 
-type ResourceKind = 'Pods' | 'Deployments'
+type ResourceKind = 'Pods' | 'Deployments' | 'StatefulSets' | 'DaemonSets' | 'Jobs' | 'CronJobs'
+type ResourceItem = PodInfo | WorkloadInfo | JobInfo | CronJobInfo
 
 const KINDS: { value: ResourceKind; method: string }[] = [
   { value: 'Pods', method: 'StreamPods' },
   { value: 'Deployments', method: 'StreamDeployments' },
+  { value: 'StatefulSets', method: 'StreamStatefulSets' },
+  { value: 'DaemonSets', method: 'StreamDaemonSets' },
+  { value: 'Jobs', method: 'StreamJobs' },
+  { value: 'CronJobs', method: 'StreamCronJobs' },
 ]
 
 interface ClusterViewProps {
@@ -34,12 +49,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const [selectedPod, setSelectedPod] = useState<string | null>(null)
 
   const method = KINDS.find((k) => k.value === kind)!.method
-  const { items, status, loaded } = useLiveResource<PodInfo | DeploymentInfo>(
-    method,
-    context,
-    namespace,
-  )
-  // Metrics only apply to the pods view; pass an empty namespace otherwise so it doesn't poll.
+  const { items, status, loaded } = useLiveResource<ResourceItem>(method, context, namespace)
   const metrics = usePodMetrics(context, kind === 'Pods' ? namespace : '')
 
   useEffect(() => {
@@ -51,6 +61,17 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
       })
       .catch((e) => setNsError(String(e)))
   }, [context, defaultNamespace])
+
+  // Logs always come from a pod: pods open directly; workloads resolve to one of their pods.
+  const openLogs = (name: string) => {
+    if (kind === 'Pods') {
+      setSelectedPod(name)
+      return
+    }
+    resolvePod(context, namespace, kind, name)
+      .then((pod) => pod && setSelectedPod(pod))
+      .catch(() => {})
+  }
 
   return (
     <div className="space-y-4">
@@ -97,7 +118,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
           loaded={loaded}
           items={items}
           metrics={metrics}
-          onSelectPod={setSelectedPod}
+          onSelect={openLogs}
         />
       )}
 
@@ -117,14 +138,14 @@ function ResourceArea({
   loaded,
   items,
   metrics,
-  onSelectPod,
+  onSelect,
 }: {
   kind: ResourceKind
   status: LiveStatus
   loaded: boolean
-  items: (PodInfo | DeploymentInfo)[]
+  items: ResourceItem[]
   metrics: Map<string, PodMetricsInfo>
-  onSelectPod: (pod: string) => void
+  onSelect: (name: string) => void
 }) {
   if (status === 'error') {
     return (
@@ -137,16 +158,23 @@ function ResourceArea({
   if (!loaded) {
     return (
       <div className="flex justify-center py-20">
-        <Spinner
-          label={status === 'reconnecting' ? 'Reconnecting…' : `Loading ${kind.toLowerCase()}…`}
-        />
+        <Spinner label={status === 'reconnecting' ? 'Reconnecting…' : `Loading ${kind.toLowerCase()}…`} />
       </div>
     )
   }
-  if (kind === 'Deployments') {
-    return <DeploymentTable deployments={items as DeploymentInfo[]} />
+
+  switch (kind) {
+    case 'Pods':
+      return <PodTable pods={items as PodInfo[]} metrics={metrics} onSelectPod={onSelect} />
+    case 'Jobs':
+      return <JobTable jobs={items as JobInfo[]} onSelect={onSelect} />
+    case 'CronJobs':
+      return <CronJobTable cronJobs={items as CronJobInfo[]} />
+    default:
+      return (
+        <WorkloadTable kindLabel={kind} workloads={items as WorkloadInfo[]} onSelect={onSelect} />
+      )
   }
-  return <PodTable pods={items as PodInfo[]} metrics={metrics} onSelectPod={onSelectPod} />
 }
 
 function LiveBadge({ status }: { status: LiveStatus }) {

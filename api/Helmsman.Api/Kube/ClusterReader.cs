@@ -100,53 +100,119 @@ public class ClusterReader
         };
     }
 
-    /// <summary>
-    /// Live stream of pods in a namespace — snapshot then add/modify/delete deltas. See
-    /// <see cref="WatchResourceAsync{TItem,TList,TInfo}"/> for the watch/resync mechanics.
-    /// </summary>
-    public async IAsyncEnumerable<ResourceEvent<PodInfo>> WatchPodsAsync(
-        string context,
-        string @namespace,
-        [EnumeratorCancellation] CancellationToken ct)
+    public IAsyncEnumerable<ResourceEvent<PodInfo>> WatchPodsAsync(string context, string @namespace, CancellationToken ct)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        return WatchNamespacedAsync<V1Pod, V1PodList, PodInfo>(
+            context,
+            (c, t) => c.CoreV1.ListNamespacedPodAsync(@namespace, cancellationToken: t),
+            (c, rv) => c.CoreV1.ListNamespacedPodWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToPodInfo, p => p.Metadata.Name, ct);
+    }
 
-        using IKubernetes client = _factory.CreateClient(context);
-        IAsyncEnumerable<ResourceEvent<PodInfo>> stream = WatchResourceAsync<V1Pod, V1PodList, PodInfo>(
-            c => client.CoreV1.ListNamespacedPodAsync(@namespace, cancellationToken: c),
-            rv => client.CoreV1.ListNamespacedPodWithHttpMessagesAsync(
-                @namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
-            ToPodInfo,
-            pod => pod.Metadata.Name,
-            ct);
-        await foreach (ResourceEvent<PodInfo> e in stream)
-        {
-            yield return e;
-        }
+    public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> WatchDeploymentsAsync(string context, string @namespace, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        return WatchNamespacedAsync<V1Deployment, V1DeploymentList, WorkloadInfo>(
+            context,
+            (c, t) => c.AppsV1.ListNamespacedDeploymentAsync(@namespace, cancellationToken: t),
+            (c, rv) => c.AppsV1.ListNamespacedDeploymentWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToWorkload, d => d.Metadata.Name, ct);
+    }
+
+    public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> WatchStatefulSetsAsync(string context, string @namespace, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        return WatchNamespacedAsync<V1StatefulSet, V1StatefulSetList, WorkloadInfo>(
+            context,
+            (c, t) => c.AppsV1.ListNamespacedStatefulSetAsync(@namespace, cancellationToken: t),
+            (c, rv) => c.AppsV1.ListNamespacedStatefulSetWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToWorkload, s => s.Metadata.Name, ct);
+    }
+
+    public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> WatchDaemonSetsAsync(string context, string @namespace, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        return WatchNamespacedAsync<V1DaemonSet, V1DaemonSetList, WorkloadInfo>(
+            context,
+            (c, t) => c.AppsV1.ListNamespacedDaemonSetAsync(@namespace, cancellationToken: t),
+            (c, rv) => c.AppsV1.ListNamespacedDaemonSetWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToWorkload, d => d.Metadata.Name, ct);
+    }
+
+    public IAsyncEnumerable<ResourceEvent<JobInfo>> WatchJobsAsync(string context, string @namespace, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        return WatchNamespacedAsync<V1Job, V1JobList, JobInfo>(
+            context,
+            (c, t) => c.BatchV1.ListNamespacedJobAsync(@namespace, cancellationToken: t),
+            (c, rv) => c.BatchV1.ListNamespacedJobWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToJob, j => j.Metadata.Name, ct);
+    }
+
+    public IAsyncEnumerable<ResourceEvent<CronJobInfo>> WatchCronJobsAsync(string context, string @namespace, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        return WatchNamespacedAsync<V1CronJob, V1CronJobList, CronJobInfo>(
+            context,
+            (c, t) => c.BatchV1.ListNamespacedCronJobAsync(@namespace, cancellationToken: t),
+            (c, rv) => c.BatchV1.ListNamespacedCronJobWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToCronJob, cj => cj.Metadata.Name, ct);
     }
 
     /// <summary>
-    /// Live stream of deployments in a namespace — snapshot then add/modify/delete deltas.
+    /// Resolves a representative pod for a workload so its logs can be streamed (kubectl-style:
+    /// pick a pod matching the workload's selector). Returns null for kinds without a pod selector
+    /// (e.g. CronJobs) or when no pods exist.
     /// </summary>
-    public async IAsyncEnumerable<ResourceEvent<DeploymentInfo>> WatchDeploymentsAsync(
-        string context,
-        string @namespace,
-        [EnumeratorCancellation] CancellationToken ct)
+    public async Task<string?> ResolvePodAsync(string context, string @namespace, string kind, string name, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
         using IKubernetes client = _factory.CreateClient(context);
-        IAsyncEnumerable<ResourceEvent<DeploymentInfo>> stream =
-            WatchResourceAsync<V1Deployment, V1DeploymentList, DeploymentInfo>(
-                c => client.AppsV1.ListNamespacedDeploymentAsync(@namespace, cancellationToken: c),
-                rv => client.AppsV1.ListNamespacedDeploymentWithHttpMessagesAsync(
-                    @namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
-                ToDeploymentInfo,
-                deployment => deployment.Metadata.Name,
-                ct);
-        await foreach (ResourceEvent<DeploymentInfo> e in stream)
+
+        V1LabelSelector? selector = kind switch
+        {
+            "Deployments" => (await client.AppsV1.ReadNamespacedDeploymentAsync(name, @namespace, cancellationToken: ct)).Spec?.Selector,
+            "StatefulSets" => (await client.AppsV1.ReadNamespacedStatefulSetAsync(name, @namespace, cancellationToken: ct)).Spec?.Selector,
+            "DaemonSets" => (await client.AppsV1.ReadNamespacedDaemonSetAsync(name, @namespace, cancellationToken: ct)).Spec?.Selector,
+            "Jobs" => (await client.BatchV1.ReadNamespacedJobAsync(name, @namespace, cancellationToken: ct)).Spec?.Selector,
+            _ => null,
+        };
+
+        string? labelSelector = ToLabelSelector(selector);
+        if (labelSelector is null)
+        {
+            return null;
+        }
+
+        V1PodList pods = await client.CoreV1.ListNamespacedPodAsync(@namespace, labelSelector: labelSelector, cancellationToken: ct);
+        V1Pod? pod = pods.Items.FirstOrDefault(p => p.Status?.Phase == "Running") ?? pods.Items.FirstOrDefault();
+        return pod?.Metadata.Name;
+    }
+
+    /// <summary>
+    /// Creates a Kubernetes client for the context and streams a generic namespaced resource,
+    /// owning the client for the life of the stream. The list/watch funcs receive the client.
+    /// </summary>
+    private async IAsyncEnumerable<ResourceEvent<TInfo>> WatchNamespacedAsync<TItem, TList, TInfo>(
+        string context,
+        Func<IKubernetes, CancellationToken, Task<TList>> listAsync,
+        Func<IKubernetes, string, Task<HttpOperationResponse<TList>>> watchFrom,
+        Func<TItem, TInfo> map,
+        Func<TItem, string> nameOf,
+        [EnumeratorCancellation] CancellationToken ct)
+        where TItem : IKubernetesObject<V1ObjectMeta>
+        where TList : IKubernetesObject<V1ListMeta>, IItems<TItem>
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(context);
+        using IKubernetes client = _factory.CreateClient(context);
+        await foreach (ResourceEvent<TInfo> e in WatchResourceAsync<TItem, TList, TInfo>(
+            c => listAsync(client, c),
+            rv => watchFrom(client, rv),
+            map, nameOf, ct))
         {
             yield return e;
         }
@@ -274,19 +340,82 @@ public class ClusterReader
         }
     }
 
-    private static DeploymentInfo ToDeploymentInfo(V1Deployment deployment) =>
+    private static WorkloadInfo ToWorkload(V1Deployment d) =>
         new()
         {
-            Name = deployment.Metadata.Name,
-            DesiredReplicas = deployment.Spec?.Replicas ?? 0,
-            ReadyReplicas = deployment.Status?.ReadyReplicas ?? 0,
-            UpToDateReplicas = deployment.Status?.UpdatedReplicas ?? 0,
-            AvailableReplicas = deployment.Status?.AvailableReplicas ?? 0,
-            Image = deployment.Spec?.Template?.Spec?.Containers?.FirstOrDefault()?.Image,
-            CreatedAt = deployment.Metadata?.CreationTimestamp is { } ts
-                ? new DateTimeOffset(ts, TimeSpan.Zero)
-                : null,
+            Name = d.Metadata.Name,
+            Desired = d.Spec?.Replicas ?? 0,
+            Ready = d.Status?.ReadyReplicas ?? 0,
+            UpToDate = d.Status?.UpdatedReplicas ?? 0,
+            Available = d.Status?.AvailableReplicas ?? 0,
+            Image = FirstImage(d.Spec?.Template),
+            CreatedAt = Timestamp(d.Metadata),
         };
+
+    private static WorkloadInfo ToWorkload(V1StatefulSet s) =>
+        new()
+        {
+            Name = s.Metadata.Name,
+            Desired = s.Spec?.Replicas ?? 0,
+            Ready = s.Status?.ReadyReplicas ?? 0,
+            UpToDate = s.Status?.UpdatedReplicas ?? 0,
+            Available = s.Status?.CurrentReplicas ?? 0,
+            Image = FirstImage(s.Spec?.Template),
+            CreatedAt = Timestamp(s.Metadata),
+        };
+
+    private static WorkloadInfo ToWorkload(V1DaemonSet d) =>
+        new()
+        {
+            Name = d.Metadata.Name,
+            Desired = d.Status?.DesiredNumberScheduled ?? 0,
+            Ready = d.Status?.NumberReady ?? 0,
+            UpToDate = d.Status?.UpdatedNumberScheduled ?? 0,
+            Available = d.Status?.NumberAvailable ?? 0,
+            Image = FirstImage(d.Spec?.Template),
+            CreatedAt = Timestamp(d.Metadata),
+        };
+
+    private static JobInfo ToJob(V1Job j) =>
+        new()
+        {
+            Name = j.Metadata.Name,
+            Completions = j.Spec?.Completions ?? 0,
+            Succeeded = j.Status?.Succeeded ?? 0,
+            Failed = j.Status?.Failed ?? 0,
+            Complete = j.Status?.Conditions?.Any(c =>
+                c.Type == "Complete" && string.Equals(c.Status, "True", StringComparison.Ordinal)) ?? false,
+            Image = FirstImage(j.Spec?.Template),
+            CreatedAt = Timestamp(j.Metadata),
+        };
+
+    private static CronJobInfo ToCronJob(V1CronJob c) =>
+        new()
+        {
+            Name = c.Metadata.Name,
+            Schedule = c.Spec?.Schedule ?? "",
+            Suspended = c.Spec?.Suspend ?? false,
+            Active = c.Status?.Active?.Count ?? 0,
+            LastSchedule = c.Status?.LastScheduleTime is { } ls
+                ? new DateTimeOffset(ls, TimeSpan.Zero)
+                : null,
+            CreatedAt = Timestamp(c.Metadata),
+        };
+
+    private static string? FirstImage(V1PodTemplateSpec? template) =>
+        template?.Spec?.Containers?.FirstOrDefault()?.Image;
+
+    private static DateTimeOffset? Timestamp(V1ObjectMeta? meta) =>
+        meta?.CreationTimestamp is { } ts ? new DateTimeOffset(ts, TimeSpan.Zero) : null;
+
+    private static string? ToLabelSelector(V1LabelSelector? selector)
+    {
+        if (selector?.MatchLabels is not { Count: > 0 } labels)
+        {
+            return null;
+        }
+        return string.Join(",", labels.Select(kv => $"{kv.Key}={kv.Value}"));
+    }
 
     private static PodInfo ToPodInfo(V1Pod pod)
     {

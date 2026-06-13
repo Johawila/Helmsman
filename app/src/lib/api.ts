@@ -15,27 +15,32 @@ export interface PodInfo {
   createdAt: string | null
 }
 
-export async function fetchContexts(): Promise<ContextInfo[]> {
-  return getJson('/api/contexts')
-}
-
-export async function fetchNamespaces(context: string): Promise<string[]> {
-  const q = new URLSearchParams({ context })
-  return getJson(`/api/namespaces?${q}`)
-}
-
-export async function fetchPods(context: string, namespace: string): Promise<PodInfo[]> {
-  const q = new URLSearchParams({ context, namespace })
-  return getJson(`/api/pods?${q}`)
-}
-
-export interface DeploymentInfo {
+export interface WorkloadInfo {
   name: string
-  desiredReplicas: number
-  readyReplicas: number
-  upToDateReplicas: number
-  availableReplicas: number
+  desired: number
+  ready: number
+  upToDate: number
+  available: number
   image: string | null
+  createdAt: string | null
+}
+
+export interface JobInfo {
+  name: string
+  completions: number
+  succeeded: number
+  failed: number
+  complete: boolean
+  image: string | null
+  createdAt: string | null
+}
+
+export interface CronJobInfo {
+  name: string
+  schedule: string
+  suspended: boolean
+  active: number
+  lastSchedule: string | null
   createdAt: string | null
 }
 
@@ -45,9 +50,31 @@ export interface PodMetricsInfo {
   memoryMi: number
 }
 
+export async function fetchContexts(): Promise<ContextInfo[]> {
+  return getJson('/api/contexts')
+}
+
+export async function fetchNamespaces(context: string): Promise<string[]> {
+  const q = new URLSearchParams({ context })
+  return getJson(`/api/namespaces?${q}`)
+}
+
 export async function fetchMetrics(context: string, namespace: string): Promise<PodMetricsInfo[]> {
   const q = new URLSearchParams({ context, namespace })
   return getJson(`/api/metrics?${q}`)
+}
+
+// Resolves a workload to one of its pods (for log streaming). Returns null when the kind has no
+// pod selector (CronJobs) or no pods are running.
+export async function resolvePod(
+  context: string,
+  namespace: string,
+  kind: string,
+  name: string,
+): Promise<string | null> {
+  const q = new URLSearchParams({ context, namespace, kind, name })
+  const { pod } = await getJson<{ pod: string | null }>(`/api/resolve-pod?${q}`)
+  return pod
 }
 
 async function getJson<T>(url: string): Promise<T> {

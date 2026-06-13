@@ -18,19 +18,21 @@ public class ResourcesHub : Hub
         _reader = reader;
     }
 
-    public IAsyncEnumerable<ResourceEvent<PodInfo>> StreamPods(
-        string context,
-        string @namespace,
-        CancellationToken ct)
-    {
-        return _reader.WatchPodsAsync(context, @namespace, ct);
-    }
+    public IAsyncEnumerable<ResourceEvent<PodInfo>> StreamPods(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchPodsAsync(context, @namespace, ct);
 
-    public IAsyncEnumerable<ResourceEvent<DeploymentInfo>> StreamDeployments(
-        string context,
-        string @namespace,
-        CancellationToken ct)
-    {
-        return _reader.WatchDeploymentsAsync(context, @namespace, ct);
-    }
+    public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> StreamDeployments(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchDeploymentsAsync(context, @namespace, ct);
+
+    public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> StreamStatefulSets(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchStatefulSetsAsync(context, @namespace, ct);
+
+    public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> StreamDaemonSets(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchDaemonSetsAsync(context, @namespace, ct);
+
+    public IAsyncEnumerable<ResourceEvent<JobInfo>> StreamJobs(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchJobsAsync(context, @namespace, ct);
+
+    public IAsyncEnumerable<ResourceEvent<CronJobInfo>> StreamCronJobs(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchCronJobsAsync(context, @namespace, ct);
 }

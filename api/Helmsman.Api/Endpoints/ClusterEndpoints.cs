@@ -69,5 +69,26 @@ public static class ClusterEndpoints
                 return Results.BadRequest(ex.Message);
             }
         });
+
+        // Resolves a workload (Deployment/StatefulSet/DaemonSet/Job) to a representative pod so
+        // its logs can be streamed. Returns { pod: null } when there's no matching pod.
+        app.MapGet("/api/resolve-pod", async (string? context, string? @namespace, string? kind, string? name, ClusterReader reader, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(context) || string.IsNullOrWhiteSpace(@namespace)
+                || string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(name))
+            {
+                return Results.BadRequest("context, namespace, kind and name query parameters are required.");
+            }
+
+            try
+            {
+                string? pod = await reader.ResolvePodAsync(context, @namespace, kind, name, ct);
+                return Results.Ok(new { pod });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
     }
 }
