@@ -6,14 +6,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { PodInfo } from '@/lib/api'
+import type { PodInfo, PodMetricsInfo } from '@/lib/api'
 import { formatAge } from '@/lib/kube'
 
 interface PodTableProps {
   pods: PodInfo[]
+  metrics: Map<string, PodMetricsInfo>
+  onSelectPod: (pod: string) => void
 }
 
-export default function PodTable({ pods }: PodTableProps) {
+export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) {
   if (pods.length === 0) {
     return <p className="text-muted-foreground">No pods in this namespace.</p>
   }
@@ -25,36 +27,55 @@ export default function PodTable({ pods }: PodTableProps) {
           <TableHead>Status</TableHead>
           <TableHead className="text-right">Ready</TableHead>
           <TableHead className="text-right">Restarts</TableHead>
+          <TableHead className="text-right">CPU</TableHead>
+          <TableHead className="text-right">Memory</TableHead>
           <TableHead>Node</TableHead>
           <TableHead className="text-right">Age</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {pods.map((pod) => (
-          <TableRow key={pod.name}>
-            <TableCell className="font-mono">{pod.name}</TableCell>
-            <TableCell>
-              <span className="flex items-center gap-2">
-                <span
-                  className={`size-2 rounded-full ${phaseDot(pod.phase)} ${pod.phase === 'Running' ? 'animate-pulse' : ''}`}
-                />
-                {pod.phase}
-              </span>
-            </TableCell>
-            <TableCell className="text-right font-mono">
-              {pod.readyContainers}/{pod.totalContainers}
-            </TableCell>
-            <TableCell
-              className={`text-right font-mono ${pod.restarts > 0 ? 'text-amber-500' : ''}`}
-            >
-              {pod.restarts}
-            </TableCell>
-            <TableCell className="font-mono text-muted-foreground">{pod.node ?? '—'}</TableCell>
-            <TableCell className="text-right font-mono text-muted-foreground">
-              {formatAge(pod.createdAt)}
-            </TableCell>
-          </TableRow>
-        ))}
+        {pods.map((pod) => {
+          const metric = metrics.get(pod.name)
+          return (
+            <TableRow key={pod.name}>
+              <TableCell>
+                <button
+                  className="font-mono text-foreground hover:text-primary hover:underline"
+                  onClick={() => onSelectPod(pod.name)}
+                  title="View logs"
+                >
+                  {pod.name}
+                </button>
+              </TableCell>
+              <TableCell>
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`size-2 rounded-full ${phaseDot(pod.phase)} ${pod.phase === 'Running' ? 'animate-pulse' : ''}`}
+                  />
+                  {pod.phase}
+                </span>
+              </TableCell>
+              <TableCell className="text-right font-mono">
+                {pod.readyContainers}/{pod.totalContainers}
+              </TableCell>
+              <TableCell
+                className={`text-right font-mono ${pod.restarts > 0 ? 'text-amber-500' : ''}`}
+              >
+                {pod.restarts}
+              </TableCell>
+              <TableCell className="text-right font-mono text-muted-foreground">
+                {metric ? `${metric.cpuMillicores}m` : '—'}
+              </TableCell>
+              <TableCell className="text-right font-mono text-muted-foreground">
+                {metric ? `${metric.memoryMi}Mi` : '—'}
+              </TableCell>
+              <TableCell className="font-mono text-muted-foreground">{pod.node ?? '—'}</TableCell>
+              <TableCell className="text-right font-mono text-muted-foreground">
+                {formatAge(pod.createdAt)}
+              </TableCell>
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )

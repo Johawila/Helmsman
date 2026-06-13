@@ -48,5 +48,26 @@ public static class ClusterEndpoints
                 return Results.BadRequest(ex.Message);
             }
         });
+
+        app.MapGet("/api/metrics", async (string? context, string? @namespace, ClusterReader reader, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(context))
+            {
+                return Results.BadRequest("A 'context' query parameter is required.");
+            }
+            if (string.IsNullOrWhiteSpace(@namespace))
+            {
+                return Results.BadRequest("A 'namespace' query parameter is required.");
+            }
+
+            try
+            {
+                return Results.Ok(await reader.ListPodMetricsAsync(context, @namespace, ct));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
     }
 }

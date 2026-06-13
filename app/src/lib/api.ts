@@ -29,6 +29,17 @@ export async function fetchPods(context: string, namespace: string): Promise<Pod
   return getJson(`/api/pods?${q}`)
 }
 
+export interface PodMetricsInfo {
+  name: string
+  cpuMillicores: number
+  memoryMi: number
+}
+
+export async function fetchMetrics(context: string, namespace: string): Promise<PodMetricsInfo[]> {
+  const q = new URLSearchParams({ context, namespace })
+  return getJson(`/api/metrics?${q}`)
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) {

@@ -56,6 +56,51 @@ public class ClusterReader
     }
 
     /// <summary>
+    /// Current CPU/memory usage per pod from metrics-server (metrics.k8s.io). Polled, not watched —
+    /// the metrics API has no watch. Pods without samples (e.g. just-started or completed) are omitted.
+    /// </summary>
+    public async Task<IReadOnlyList<PodMetricsInfo>> ListPodMetricsAsync(
+        string context,
+        string @namespace,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        ct.ThrowIfCancellationRequested();
+
+        using IKubernetes client = _factory.CreateClient(context);
+        PodMetricsList metrics = await client.GetKubernetesPodsMetricsByNamespaceAsync(@namespace);
+        return metrics.Items
+            .Select(ToMetricsInfo)
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static PodMetricsInfo ToMetricsInfo(PodMetrics metrics)
+    {
+        decimal cores = 0m;
+        decimal bytes = 0m;
+        foreach (ContainerMetrics container in metrics.Containers ?? [])
+        {
+            if (container.Usage.TryGetValue("cpu", out ResourceQuantity? cpu))
+            {
+                cores += cpu.ToDecimal();
+            }
+            if (container.Usage.TryGetValue("memory", out ResourceQuantity? memory))
+            {
+                bytes += memory.ToDecimal();
+            }
+        }
+
+        return new PodMetricsInfo
+        {
+            Name = metrics.Metadata.Name,
+            CpuMillicores = (int)Math.Round(cores * 1000m),
+            MemoryMi = (int)Math.Round(bytes / (1024m * 1024m)),
+        };
+    }
+
+    /// <summary>
     /// Streams the live state of pods in a namespace: a full snapshot first, then incremental
     /// add/modify/delete deltas via a Kubernetes watch. If the watch drops (e.g. the server
     /// expires it with 410 Gone), it resyncs by re-listing and emitting a fresh snapshot.
@@ -134,6 +179,57 @@ public class ClusterReader
             {
                 await events.DisposeAsync();
             }
+        }
+    }
+
+    /// <summary>
+    /// Streams a pod's logs line by line, following new output until the client disconnects
+    /// (<paramref name="ct"/> cancelled) or the pod stops producing logs. Starts with the last
+    /// 500 lines. If <paramref name="container"/> is null, the pod's first container is used.
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamPodLogAsync(
+        string context,
+        string @namespace,
+        string pod,
+        string? container,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pod);
+
+        using IKubernetes client = _factory.CreateClient(context);
+
+        string? containerName = container;
+        if (string.IsNullOrWhiteSpace(containerName))
+        {
+            V1Pod target = await client.CoreV1.ReadNamespacedPodAsync(pod, @namespace, cancellationToken: ct);
+            containerName = target.Spec?.Containers?.FirstOrDefault()?.Name;
+        }
+
+        using HttpOperationResponse<Stream> response =
+            await client.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(
+                pod, @namespace, container: containerName, follow: true, tailLines: 500, cancellationToken: ct);
+        using StreamReader reader = new(response.Body);
+
+        while (!ct.IsCancellationRequested)
+        {
+            string? line;
+            try
+            {
+                line = await reader.ReadLineAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                yield break;
+            }
+
+            if (line is null)
+            {
+                yield break;
+            }
+
+            yield return line;
         }
     }
 

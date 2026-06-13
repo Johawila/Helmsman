@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import LogSheet from '@/components/LogSheet'
 import PodTable from '@/components/PodTable'
 import Spinner from '@/components/Spinner'
 import {
@@ -8,8 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchNamespaces, type PodInfo } from '@/lib/api'
+import { fetchNamespaces, type PodInfo, type PodMetricsInfo } from '@/lib/api'
 import { useLivePods, type LiveStatus } from '@/lib/useLivePods'
+import { usePodMetrics } from '@/lib/usePodMetrics'
 
 interface ClusterViewProps {
   context: string
@@ -20,7 +22,9 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [namespace, setNamespace] = useState<string>('')
   const [nsError, setNsError] = useState<string | null>(null)
+  const [selectedPod, setSelectedPod] = useState<string | null>(null)
   const { pods, status, loaded } = useLivePods(context, namespace)
+  const metrics = usePodMetrics(context, namespace)
 
   useEffect(() => {
     setNsError(null)
@@ -54,7 +58,22 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
       </div>
 
       {nsError && <p className="font-mono text-destructive">{nsError}</p>}
-      {namespace && !nsError && <PodArea status={status} loaded={loaded} pods={pods} />}
+      {namespace && !nsError && (
+        <PodArea
+          status={status}
+          loaded={loaded}
+          pods={pods}
+          metrics={metrics}
+          onSelectPod={setSelectedPod}
+        />
+      )}
+
+      <LogSheet
+        context={context}
+        namespace={namespace}
+        pod={selectedPod}
+        onClose={() => setSelectedPod(null)}
+      />
     </div>
   )
 }
@@ -63,10 +82,14 @@ function PodArea({
   status,
   loaded,
   pods,
+  metrics,
+  onSelectPod,
 }: {
   status: LiveStatus
   loaded: boolean
   pods: PodInfo[]
+  metrics: Map<string, PodMetricsInfo>
+  onSelectPod: (pod: string) => void
 }) {
   if (status === 'error') {
     return (
@@ -83,7 +106,7 @@ function PodArea({
       </div>
     )
   }
-  return <PodTable pods={pods} />
+  return <PodTable pods={pods} metrics={metrics} onSelectPod={onSelectPod} />
 }
 
 function LiveBadge({ status }: { status: LiveStatus }) {
