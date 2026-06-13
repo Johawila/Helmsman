@@ -101,47 +101,82 @@ public class ClusterReader
     }
 
     /// <summary>
-    /// Streams the live state of pods in a namespace: a full snapshot first, then incremental
-    /// add/modify/delete deltas via a Kubernetes watch. If the watch drops (e.g. the server
-    /// expires it with 410 Gone), it resyncs by re-listing and emitting a fresh snapshot.
-    /// Stops when <paramref name="ct"/> is cancelled (the client unsubscribed or disconnected).
+    /// Live stream of pods in a namespace — snapshot then add/modify/delete deltas. See
+    /// <see cref="WatchResourceAsync{TItem,TList,TInfo}"/> for the watch/resync mechanics.
     /// </summary>
-    public async IAsyncEnumerable<PodEvent> WatchPodsAsync(
+    public async IAsyncEnumerable<ResourceEvent<PodInfo>> WatchPodsAsync(
         string context,
         string @namespace,
-        [EnumeratorCancellation] CancellationToken ct
-    )
+        [EnumeratorCancellation] CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
 
         using IKubernetes client = _factory.CreateClient(context);
+        IAsyncEnumerable<ResourceEvent<PodInfo>> stream = WatchResourceAsync<V1Pod, V1PodList, PodInfo>(
+            c => client.CoreV1.ListNamespacedPodAsync(@namespace, cancellationToken: c),
+            rv => client.CoreV1.ListNamespacedPodWithHttpMessagesAsync(
+                @namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToPodInfo,
+            pod => pod.Metadata.Name,
+            ct);
+        await foreach (ResourceEvent<PodInfo> e in stream)
+        {
+            yield return e;
+        }
+    }
 
+    /// <summary>
+    /// Live stream of deployments in a namespace — snapshot then add/modify/delete deltas.
+    /// </summary>
+    public async IAsyncEnumerable<ResourceEvent<DeploymentInfo>> WatchDeploymentsAsync(
+        string context,
+        string @namespace,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+
+        using IKubernetes client = _factory.CreateClient(context);
+        IAsyncEnumerable<ResourceEvent<DeploymentInfo>> stream =
+            WatchResourceAsync<V1Deployment, V1DeploymentList, DeploymentInfo>(
+                c => client.AppsV1.ListNamespacedDeploymentAsync(@namespace, cancellationToken: c),
+                rv => client.AppsV1.ListNamespacedDeploymentWithHttpMessagesAsync(
+                    @namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+                ToDeploymentInfo,
+                deployment => deployment.Metadata.Name,
+                ct);
+        await foreach (ResourceEvent<DeploymentInfo> e in stream)
+        {
+            yield return e;
+        }
+    }
+
+    /// <summary>
+    /// Generic list+watch loop shared by all resource kinds: emit a snapshot, watch from its
+    /// resourceVersion, yield deltas, and resync (re-list → fresh snapshot) when the watch drops
+    /// or the server expires it (410 Gone). Stops when <paramref name="ct"/> is cancelled.
+    /// </summary>
+    private static async IAsyncEnumerable<ResourceEvent<TInfo>> WatchResourceAsync<TItem, TList, TInfo>(
+        Func<CancellationToken, Task<TList>> listAsync,
+        Func<string, Task<HttpOperationResponse<TList>>> watchFrom,
+        Func<TItem, TInfo> map,
+        Func<TItem, string> nameOf,
+        [EnumeratorCancellation] CancellationToken ct)
+        where TItem : IKubernetesObject<V1ObjectMeta>
+        where TList : IKubernetesObject<V1ListMeta>, IItems<TItem>
+    {
         while (!ct.IsCancellationRequested)
         {
-            // 1. Snapshot current state and capture the resourceVersion to watch from.
-            V1PodList list = await client.CoreV1.ListNamespacedPodAsync(
-                @namespace,
-                cancellationToken: ct
-            );
-            yield return PodEvent.Snapshot(
-                list.Items.Select(ToPodInfo).OrderBy(p => p.Name, StringComparer.Ordinal).ToList()
-            );
-
-            // 2. Watch for changes from that version, yielding deltas until the watch drops.
-            Task<HttpOperationResponse<V1PodList>> response =
-                client.CoreV1.ListNamespacedPodWithHttpMessagesAsync(
-                    @namespace,
-                    watch: true,
-                    resourceVersion: list.Metadata.ResourceVersion,
-                    cancellationToken: ct
-                );
+            TList list = await listAsync(ct);
+            yield return ResourceEvent<TInfo>.Snapshot(
+                list.Items.OrderBy(nameOf, StringComparer.Ordinal).Select(map).ToList());
 
             // WatchAsync is marked obsolete in v19, but it is the only IAsyncEnumerable-based
             // watch overload; the suggested replacement is callback-based and doesn't fit a stream.
 #pragma warning disable CS0618
-            IAsyncEnumerator<(WatchEventType Type, V1Pod Pod)> events = response
-                .WatchAsync<V1Pod, V1PodList>(cancellationToken: ct)
+            IAsyncEnumerator<(WatchEventType Type, TItem Item)> events = watchFrom(list.Metadata.ResourceVersion)
+                .WatchAsync<TItem, TList>(cancellationToken: ct)
                 .GetAsyncEnumerator(ct);
 #pragma warning restore CS0618
             try
@@ -159,8 +194,7 @@ public class ClusterReader
                     }
                     catch
                     {
-                        // Watch expired or connection dropped — break out and resync via re-list.
-                        break;
+                        break; // watch expired / dropped — resync via re-list
                     }
 
                     if (!moved)
@@ -168,7 +202,14 @@ public class ClusterReader
                         break;
                     }
 
-                    PodEvent? delta = ToDelta(events.Current.Type, events.Current.Pod);
+                    (WatchEventType type, TItem item) = events.Current;
+                    ResourceEvent<TInfo>? delta = type switch
+                    {
+                        WatchEventType.Added => ResourceEvent<TInfo>.Upsert("Added", map(item)),
+                        WatchEventType.Modified => ResourceEvent<TInfo>.Upsert("Modified", map(item)),
+                        WatchEventType.Deleted => ResourceEvent<TInfo>.Deleted(nameOf(item)),
+                        _ => null,
+                    };
                     if (delta is not null)
                     {
                         yield return delta;
@@ -233,13 +274,18 @@ public class ClusterReader
         }
     }
 
-    private static PodEvent? ToDelta(WatchEventType type, V1Pod pod) =>
-        type switch
+    private static DeploymentInfo ToDeploymentInfo(V1Deployment deployment) =>
+        new()
         {
-            WatchEventType.Added => PodEvent.Upsert("Added", ToPodInfo(pod)),
-            WatchEventType.Modified => PodEvent.Upsert("Modified", ToPodInfo(pod)),
-            WatchEventType.Deleted => PodEvent.Deleted(pod.Metadata.Name),
-            _ => null,
+            Name = deployment.Metadata.Name,
+            DesiredReplicas = deployment.Spec?.Replicas ?? 0,
+            ReadyReplicas = deployment.Status?.ReadyReplicas ?? 0,
+            UpToDateReplicas = deployment.Status?.UpdatedReplicas ?? 0,
+            AvailableReplicas = deployment.Status?.AvailableReplicas ?? 0,
+            Image = deployment.Spec?.Template?.Spec?.Containers?.FirstOrDefault()?.Image,
+            CreatedAt = deployment.Metadata?.CreationTimestamp is { } ts
+                ? new DateTimeOffset(ts, TimeSpan.Zero)
+                : null,
         };
 
     private static PodInfo ToPodInfo(V1Pod pod)

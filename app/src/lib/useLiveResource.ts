@@ -1,68 +1,68 @@
 import * as signalr from '@microsoft/signalr'
 import { useEffect, useState } from 'react'
-import type { PodInfo } from './api'
 
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'error'
 
-interface PodEvent {
+interface ResourceEvent<T> {
   type: 'Snapshot' | 'Added' | 'Modified' | 'Deleted'
-  pods?: PodInfo[]
-  pod?: PodInfo
+  items?: T[]
+  item?: T
   name?: string
 }
 
-// Subscribes to the live pod stream for a context/namespace over SignalR and maintains the
+// Subscribes to a live resource stream over the /hubs/resources SignalR hub and maintains the
 // current set as events arrive: Snapshot replaces everything; Added/Modified upsert by name;
-// Deleted removes by name. Tears the connection down (and the server-side watch with it) when
-// the context/namespace changes or the component unmounts.
-export function useLivePods(context: string, namespace: string) {
-  const [pods, setPods] = useState<PodInfo[]>([])
+// Deleted removes by name. Generic over any DTO with a `name`. `method` selects the hub stream
+// (e.g. 'StreamPods', 'StreamDeployments'). Tears down (and the server-side watch) when method,
+// context or namespace changes, or the component unmounts.
+export function useLiveResource<T extends { name: string }>(
+  method: string,
+  context: string,
+  namespace: string,
+) {
+  const [items, setItems] = useState<T[]>([])
   const [status, setStatus] = useState<LiveStatus>('connecting')
-  // True once the first event (the snapshot) has been applied. The SignalR connection goes
-  // 'live' the instant the socket opens — well before any pod data arrives — so this is what
-  // the UI should gate the spinner on, not the connection status.
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     if (!namespace) {
-      setPods([])
+      setItems([])
       setLoaded(false)
       return
     }
 
-    const byName = new Map<string, PodInfo>()
-    const publish = () =>
-      setPods([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)))
+    const byName = new Map<string, T>()
+    const publish = () => setItems([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)))
 
-    const apply = (event: PodEvent) => {
+    const apply = (event: ResourceEvent<T>) => {
       if (event.type === 'Snapshot') {
         byName.clear()
-        event.pods?.forEach((p) => byName.set(p.name, p))
+        event.items?.forEach((it) => byName.set(it.name, it))
       } else if (event.type === 'Deleted') {
         if (event.name) byName.delete(event.name)
-      } else if (event.pod) {
-        byName.set(event.pod.name, event.pod)
+      } else if (event.item) {
+        byName.set(event.item.name, event.item)
       }
       setLoaded(true)
       publish()
     }
 
     const connection = new signalr.HubConnectionBuilder()
-      .withUrl('/hubs/pods')
+      .withUrl('/hubs/resources')
       .withAutomaticReconnect()
       .build()
 
     let disposed = false
-    let stream: signalr.ISubscription<PodEvent> | null = null
+    let stream: signalr.ISubscription<ResourceEvent<T>> | null = null
 
     const subscribe = () => {
       stream?.dispose()
-      stream = connection.stream<PodEvent>('StreamPods', context, namespace).subscribe({
+      stream = connection.stream<ResourceEvent<T>>(method, context, namespace).subscribe({
         next: apply,
         error: () => {
           if (!disposed) setStatus('error')
         },
-        complete: () => { },
+        complete: () => {},
       })
     }
 
@@ -76,7 +76,7 @@ export function useLivePods(context: string, namespace: string) {
     })
 
     setStatus('connecting')
-    setPods([])
+    setItems([])
     setLoaded(false)
     connection
       .start()
@@ -94,7 +94,7 @@ export function useLivePods(context: string, namespace: string) {
       stream?.dispose()
       void connection.stop()
     }
-  }, [context, namespace])
+  }, [method, context, namespace])
 
-  return { pods, status, loaded }
+  return { items, status, loaded }
 }

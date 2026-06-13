@@ -26,7 +26,7 @@ var app = builder.Build();
 
 app.UseCors(FrontendCors);
 app.MapClusterEndpoints();
-app.MapHub<PodsHub>("/hubs/pods");
+app.MapHub<ResourcesHub>("/hubs/resources");
 app.MapHub<LogsHub>("/hubs/logs");
 
 app.Run();

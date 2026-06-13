@@ -29,6 +29,16 @@ export async function fetchPods(context: string, namespace: string): Promise<Pod
   return getJson(`/api/pods?${q}`)
 }
 
+export interface DeploymentInfo {
+  name: string
+  desiredReplicas: number
+  readyReplicas: number
+  upToDateReplicas: number
+  availableReplicas: number
+  image: string | null
+  createdAt: string | null
+}
+
 export interface PodMetricsInfo {
   name: string
   cpuMillicores: number

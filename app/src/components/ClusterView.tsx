@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import DeploymentTable from '@/components/DeploymentTable'
 import LogSheet from '@/components/LogSheet'
 import PodTable from '@/components/PodTable'
 import Spinner from '@/components/Spinner'
@@ -9,9 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { fetchNamespaces, type PodInfo, type PodMetricsInfo } from '@/lib/api'
-import { useLivePods, type LiveStatus } from '@/lib/useLivePods'
+import { fetchNamespaces, type DeploymentInfo, type PodInfo, type PodMetricsInfo } from '@/lib/api'
+import { useLiveResource, type LiveStatus } from '@/lib/useLiveResource'
 import { usePodMetrics } from '@/lib/usePodMetrics'
+
+type ResourceKind = 'Pods' | 'Deployments'
+
+const KINDS: { value: ResourceKind; method: string }[] = [
+  { value: 'Pods', method: 'StreamPods' },
+  { value: 'Deployments', method: 'StreamDeployments' },
+]
 
 interface ClusterViewProps {
   context: string
@@ -21,10 +29,18 @@ interface ClusterViewProps {
 export default function ClusterView({ context, defaultNamespace }: ClusterViewProps) {
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [namespace, setNamespace] = useState<string>('')
+  const [kind, setKind] = useState<ResourceKind>('Pods')
   const [nsError, setNsError] = useState<string | null>(null)
   const [selectedPod, setSelectedPod] = useState<string | null>(null)
-  const { pods, status, loaded } = useLivePods(context, namespace)
-  const metrics = usePodMetrics(context, namespace)
+
+  const method = KINDS.find((k) => k.value === kind)!.method
+  const { items, status, loaded } = useLiveResource<PodInfo | DeploymentInfo>(
+    method,
+    context,
+    namespace,
+  )
+  // Metrics only apply to the pods view; pass an empty namespace otherwise so it doesn't poll.
+  const metrics = usePodMetrics(context, kind === 'Pods' ? namespace : '')
 
   useEffect(() => {
     setNsError(null)
@@ -40,7 +56,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Select value={namespace} onValueChange={setNamespace}>
-          <SelectTrigger className="w-72">
+          <SelectTrigger className="w-64">
             <SelectValue placeholder="Select a namespace…" />
           </SelectTrigger>
           <SelectContent>
@@ -51,18 +67,35 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             ))}
           </SelectContent>
         </Select>
+
+        <Select value={kind} onValueChange={(v) => setKind(v as ResourceKind)}>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {KINDS.map((k) => (
+              <SelectItem key={k.value} value={k.value}>
+                {k.value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         {namespace && <LiveBadge status={status} />}
         {namespace && loaded && (
-          <span className="text-sm text-muted-foreground">{pods.length} pods</span>
+          <span className="text-sm text-muted-foreground">
+            {items.length} {kind.toLowerCase()}
+          </span>
         )}
       </div>
 
       {nsError && <p className="font-mono text-destructive">{nsError}</p>}
       {namespace && !nsError && (
-        <PodArea
+        <ResourceArea
+          kind={kind}
           status={status}
           loaded={loaded}
-          pods={pods}
+          items={items}
           metrics={metrics}
           onSelectPod={setSelectedPod}
         />
@@ -78,16 +111,18 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   )
 }
 
-function PodArea({
+function ResourceArea({
+  kind,
   status,
   loaded,
-  pods,
+  items,
   metrics,
   onSelectPod,
 }: {
+  kind: ResourceKind
   status: LiveStatus
   loaded: boolean
-  pods: PodInfo[]
+  items: (PodInfo | DeploymentInfo)[]
   metrics: Map<string, PodMetricsInfo>
   onSelectPod: (pod: string) => void
 }) {
@@ -102,11 +137,16 @@ function PodArea({
   if (!loaded) {
     return (
       <div className="flex justify-center py-20">
-        <Spinner label={status === 'reconnecting' ? 'Reconnecting…' : 'Loading pods…'} />
+        <Spinner
+          label={status === 'reconnecting' ? 'Reconnecting…' : `Loading ${kind.toLowerCase()}…`}
+        />
       </div>
     )
   }
-  return <PodTable pods={pods} metrics={metrics} onSelectPod={onSelectPod} />
+  if (kind === 'Deployments') {
+    return <DeploymentTable deployments={items as DeploymentInfo[]} />
+  }
+  return <PodTable pods={items as PodInfo[]} metrics={metrics} onSelectPod={onSelectPod} />
 }
 
 function LiveBadge({ status }: { status: LiveStatus }) {
