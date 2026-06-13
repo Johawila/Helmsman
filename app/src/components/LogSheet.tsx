@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Spinner from '@/components/Spinner'
 import {
   Sheet,
   SheetContent,
@@ -44,9 +45,15 @@ export default function LogSheet({ context, namespace, pod, onClose }: LogSheetP
         </SheetHeader>
         <div className="flex-1 overflow-auto bg-black/40 p-4 font-mono text-xs leading-relaxed">
           {lines.length === 0 ? (
-            <span className="text-muted-foreground">
-              {status === 'connecting' ? 'Connecting…' : 'No log output yet.'}
-            </span>
+            status === 'ended' ? (
+              <span className="text-muted-foreground">No log output.</span>
+            ) : status === 'error' ? (
+              <span className="text-destructive">Log stream error.</span>
+            ) : (
+              <div className="flex justify-center py-20">
+                <Spinner label="Loading logs…" />
+              </div>
+            )
           ) : raw ? (
             lines.map((line, i) => (
               <div key={i} className="break-all whitespace-pre-wrap">
