@@ -84,7 +84,11 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   // Dashboard manages its own streams; cluster-scoped kinds stream regardless of namespace
   // (a constant placeholder keeps useLiveResource active — the server ignores it).
   const streamNamespace = kind === 'Dashboard' ? '' : clusterScoped ? 'cluster' : namespace
-  const { items, status, loaded } = useLiveResource<ResourceItem>(method, context, streamNamespace)
+  const { items, status, loaded, error } = useLiveResource<ResourceItem>(
+    method,
+    context,
+    streamNamespace,
+  )
   const metrics = usePodMetrics(context, kind === 'Pods' ? namespace : '')
 
   // A resource table is shown for any non-dashboard kind once it has something to stream:
@@ -195,6 +199,8 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             kind={kind as WorkloadKind}
             status={status}
             loaded={loaded}
+            error={error}
+            clusterScoped={clusterScoped}
             items={items}
             metrics={metrics}
             onSelect={openLogs}
@@ -218,6 +224,8 @@ function ResourceArea({
   kind,
   status,
   loaded,
+  error,
+  clusterScoped,
   items,
   metrics,
   onSelect,
@@ -225,17 +233,14 @@ function ResourceArea({
   kind: WorkloadKind
   status: LiveStatus
   loaded: boolean
+  error: string | null
+  clusterScoped: boolean
   items: ResourceItem[]
   metrics: Map<string, PodMetricsInfo>
   onSelect: (name: string) => void
 }) {
   if (status === 'error') {
-    return (
-      <p className="text-sm text-destructive">
-        Lost the cluster stream. Check your credentials (for EKS, run{' '}
-        <code className="font-mono">aws sso login</code>), then reselect the namespace.
-      </p>
-    )
+    return <StreamError kind={kind} error={error} clusterScoped={clusterScoped} />
   }
 
   return (
@@ -266,6 +271,37 @@ function renderResource(
         <WorkloadTable kindLabel={kind} workloads={items as WorkloadInfo[]} onSelect={onSelect} />
       )
   }
+}
+
+function StreamError({
+  kind,
+  error,
+  clusterScoped,
+}: {
+  kind: WorkloadKind
+  error: string | null
+  clusterScoped: boolean
+}) {
+  const forbidden = !!error && /forbidden|cannot (list|watch)|is not allowed/i.test(error)
+  const label = kind.toLowerCase()
+
+  return (
+    <div className="space-y-2 text-sm">
+      {forbidden ? (
+        <p className="text-destructive">
+          Not allowed to read {label}. Your context lacks permission to{' '}
+          {clusterScoped ? 'list/watch this cluster-scoped resource' : `list/watch ${label}`} (RBAC).
+        </p>
+      ) : (
+        <p className="text-destructive">
+          Lost the {label} stream. Check your credentials (for EKS, run{' '}
+          <code className="font-mono">aws sso login</code>)
+          {clusterScoped ? '' : ', then reselect the namespace'}.
+        </p>
+      )}
+      {error && <p className="font-mono text-xs break-all text-muted-foreground">{error}</p>}
+    </div>
+  )
 }
 
 function LiveBadge({ status }: { status: LiveStatus }) {

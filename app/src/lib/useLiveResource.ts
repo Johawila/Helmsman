@@ -28,6 +28,7 @@ export function useLiveResource<T extends { name: string }>(
   const [items, setItems] = useState<T[]>([])
   const [status, setStatus] = useState<LiveStatus>('connecting')
   const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const compareRef = useRef(compare)
   compareRef.current = compare
 
@@ -35,6 +36,7 @@ export function useLiveResource<T extends { name: string }>(
     if (!namespace) {
       setItems([])
       setLoaded(false)
+      setError(null)
       return
     }
 
@@ -62,13 +64,17 @@ export function useLiveResource<T extends { name: string }>(
     let disposed = false
     let stream: signalr.ISubscription<ResourceEvent<T>> | null = null
 
+    const fail = (err: unknown) => {
+      if (disposed) return
+      setError(err instanceof Error ? err.message : err ? String(err) : null)
+      setStatus('error')
+    }
+
     const subscribe = () => {
       stream?.dispose()
       stream = connection.stream<ResourceEvent<T>>(method, context, namespace).subscribe({
         next: apply,
-        error: () => {
-          if (!disposed) setStatus('error')
-        },
+        error: fail,
         complete: () => {},
       })
     }
@@ -78,13 +84,12 @@ export function useLiveResource<T extends { name: string }>(
       setStatus('live')
       subscribe()
     })
-    connection.onclose(() => {
-      if (!disposed) setStatus('error')
-    })
+    connection.onclose((err) => fail(err))
 
     setStatus('connecting')
     setItems([])
     setLoaded(false)
+    setError(null)
     connection
       .start()
       .then(() => {
@@ -92,9 +97,7 @@ export function useLiveResource<T extends { name: string }>(
         setStatus('live')
         subscribe()
       })
-      .catch(() => {
-        if (!disposed) setStatus('error')
-      })
+      .catch(fail)
 
     return () => {
       disposed = true
@@ -103,5 +106,5 @@ export function useLiveResource<T extends { name: string }>(
     }
   }, [method, context, namespace])
 
-  return { items, status, loaded }
+  return { items, status, loaded, error }
 }

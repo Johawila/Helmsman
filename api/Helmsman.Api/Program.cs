@@ -20,7 +20,9 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddSingleton<KubeClientFactory>();
 builder.Services.AddSingleton<ClusterReader>();
-builder.Services.AddSignalR();
+// Detailed errors are safe here: Helmsman is a local, single-user, read-only dev tool, and the
+// real reason (e.g. "Forbidden" on a cluster-scoped resource) is far more useful than a generic message.
+builder.Services.AddSignalR(options => options.EnableDetailedErrors = true);
 
 var app = builder.Build();
 
