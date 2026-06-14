@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import Spinner from '@/components/Spinner'
+import LoadingField from '@/components/LoadingField'
 import {
   Sheet,
   SheetContent,
@@ -43,26 +43,24 @@ export default function LogSheet({ context, namespace, pod, onClose }: LogSheetP
             </button>
           </SheetDescription>
         </SheetHeader>
-        <div className="flex-1 overflow-auto bg-black/40 p-4 font-mono text-xs leading-relaxed">
-          {lines.length === 0 ? (
-            status === 'ended' ? (
-              <span className="text-muted-foreground">No log output.</span>
-            ) : status === 'error' ? (
-              <span className="text-destructive">Log stream error.</span>
-            ) : (
-              <div className="flex justify-center py-20">
-                <Spinner label="Loading logs…" />
-              </div>
-            )
-          ) : raw ? (
-            lines.map((line, i) => (
-              <div key={i} className="break-all whitespace-pre-wrap">
-                {line}
-              </div>
-            ))
-          ) : (
-            lines.map((line, i) => <LogRow key={i} line={line} />)
+        <div className="relative flex-1 overflow-auto bg-black/40 p-4 font-mono text-xs leading-relaxed">
+          <LoadingField
+            active={lines.length === 0 && status !== 'ended' && status !== 'error'}
+          />
+          {lines.length === 0 && status === 'ended' && (
+            <span className="text-muted-foreground">No log output.</span>
           )}
+          {lines.length === 0 && status === 'error' && (
+            <span className="text-destructive">Log stream error.</span>
+          )}
+          {lines.length > 0 &&
+            (raw
+              ? lines.map((line, i) => (
+                  <div key={i} className="break-all whitespace-pre-wrap">
+                    {line}
+                  </div>
+                ))
+              : lines.map((line, i) => <LogRow key={i} line={line} />))}
           <div ref={bottomRef} />
         </div>
       </SheetContent>

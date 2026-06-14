@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
-import Spinner from '@/components/Spinner'
+import LoadingField from '@/components/LoadingField'
 import { useLiveResource } from '@/lib/useLiveResource'
 import { usePodMetrics } from '@/lib/usePodMetrics'
 import type { CronJobInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from '@/lib/api'
@@ -48,15 +48,10 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
     jobs.loaded &&
     cronJobs.loaded
 
-  if (!allLoaded) {
-    return (
-      <div className="flex justify-center py-20">
-        <Spinner label="Loading dashboard…" />
-      </div>
-    )
-  }
-
   return (
+    <div className={`relative ${allLoaded ? '' : 'min-h-[60vh]'}`}>
+      <LoadingField active={!allLoaded} />
+      {allLoaded && (
     <div className="space-y-6 p-6">
       {/* Summary cards */}
       <section>
@@ -151,6 +146,8 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
           </section>
         )}
       </div>
+    </div>
+      )}
     </div>
   )
 }

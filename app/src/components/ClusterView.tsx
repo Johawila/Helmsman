@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 import CronJobTable from '@/components/CronJobTable'
 import DashboardView from '@/components/DashboardView'
 import JobTable from '@/components/JobTable'
+import LoadingField from '@/components/LoadingField'
 import LogSheet from '@/components/LogSheet'
 import PodTable from '@/components/PodTable'
 import ResourceSidebar, { type SidebarKind } from '@/components/ResourceSidebar'
-import Spinner from '@/components/Spinner'
 import WorkloadTable from '@/components/WorkloadTable'
 import {
   Select,
@@ -185,14 +185,21 @@ function ResourceArea({
       </p>
     )
   }
-  if (!loaded) {
-    return (
-      <div className="flex justify-center py-20">
-        <Spinner label={status === 'reconnecting' ? 'Reconnecting…' : `Loading ${kind.toLowerCase()}…`} />
-      </div>
-    )
-  }
 
+  return (
+    <div className={`relative ${loaded ? '' : 'min-h-[60vh]'}`}>
+      <LoadingField active={!loaded} />
+      {loaded && renderResource(kind, items, metrics, onSelect)}
+    </div>
+  )
+}
+
+function renderResource(
+  kind: WorkloadKind,
+  items: ResourceItem[],
+  metrics: Map<string, PodMetricsInfo>,
+  onSelect: (name: string) => void,
+) {
   switch (kind) {
     case 'Pods':
       return <PodTable pods={items as PodInfo[]} metrics={metrics} onSelectPod={onSelect} />
