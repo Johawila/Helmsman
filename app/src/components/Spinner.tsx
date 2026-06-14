@@ -1,4 +1,4 @@
-import Lottie from 'lottie-react'
+import { LottiePlayer as Lottie } from 'lottie-react'
 import spinnerAnimation from '@/assets/spinner.json'
 
 interface SpinnerProps {
