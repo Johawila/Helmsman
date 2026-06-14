@@ -373,7 +373,12 @@ function last(arr: number[]): number {
 }
 
 function isHealthyPod(p: PodInfo): boolean {
-  return p.phase === 'Running' || p.phase === 'Succeeded'
+  return p.status === 'Running' || p.status === 'Completed'
+}
+
+// Statuses that are usually transient (mid-rollout/startup) — surfaced as warnings, not errors.
+function isTransientStatus(status: string): boolean {
+  return status === 'Pending' || status === 'Terminating' || status === 'ContainerCreating'
 }
 
 function isHealthyWorkload(w: WorkloadInfo): boolean {
@@ -390,8 +395,13 @@ function collectProblems(
   const problems: Problem[] = []
 
   for (const p of pods) {
-    if (p.phase !== 'Running' && p.phase !== 'Succeeded') {
-      problems.push({ kind: 'Pod', name: p.name, reason: p.phase, severity: 'error' })
+    if (!isHealthyPod(p)) {
+      problems.push({
+        kind: 'Pod',
+        name: p.name,
+        reason: p.status,
+        severity: isTransientStatus(p.status) ? 'warning' : 'error',
+      })
     } else if (p.restarts >= 5) {
       problems.push({
         kind: 'Pod',

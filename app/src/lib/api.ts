@@ -8,6 +8,8 @@ export interface ContextInfo {
 export interface PodInfo {
   name: string
   phase: string
+  // Derived kubectl-style status (CrashLoopBackOff, OOMKilled, Completed, …); drives health.
+  status: string
   readyContainers: number
   totalContainers: number
   restarts: number

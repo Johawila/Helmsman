@@ -472,6 +472,7 @@ public class ClusterReader
         {
             Name = pod.Metadata.Name,
             Phase = pod.Status?.Phase ?? "Unknown",
+            Status = DerivePodStatus(pod),
             ReadyContainers = statuses.Count(s => s.Ready),
             TotalContainers = total,
             Restarts = statuses.Sum(s => s.RestartCount),
@@ -481,4 +482,68 @@ public class ClusterReader
                 : null,
         };
     }
+
+    /// <summary>
+    /// kubectl-style pod status: a deleting pod is Terminating; otherwise the first meaningful
+    /// container waiting/terminated reason wins (these explain trouble even while Phase is Running);
+    /// then pod-level reasons (Evicted, …), unschedulable Pending, Succeeded→Completed, else Phase.
+    /// </summary>
+    private static string DerivePodStatus(V1Pod pod)
+    {
+        if (pod.Metadata?.DeletionTimestamp is not null)
+        {
+            return "Terminating";
+        }
+
+        V1PodStatus? status = pod.Status;
+
+        string? containerReason =
+            ContainerIssue(status?.InitContainerStatuses) ?? ContainerIssue(status?.ContainerStatuses);
+        if (containerReason is not null)
+        {
+            return containerReason;
+        }
+
+        if (!string.IsNullOrEmpty(status?.Reason)) // Evicted, NodeLost, …
+        {
+            return status!.Reason;
+        }
+
+        if (status?.Phase == "Pending" && IsUnschedulable(status))
+        {
+            return "Unschedulable";
+        }
+
+        if (status?.Phase == "Succeeded")
+        {
+            return "Completed";
+        }
+
+        return status?.Phase ?? "Unknown";
+    }
+
+    private static string? ContainerIssue(IList<V1ContainerStatus>? statuses)
+    {
+        foreach (V1ContainerStatus cs in statuses ?? [])
+        {
+            string? waiting = cs.State?.Waiting?.Reason;
+            if (!string.IsNullOrEmpty(waiting) && waiting is not "ContainerCreating" and not "PodInitializing")
+            {
+                return waiting;
+            }
+
+            string? terminated = cs.State?.Terminated?.Reason;
+            if (!string.IsNullOrEmpty(terminated) && terminated != "Completed")
+            {
+                return terminated;
+            }
+        }
+        return null;
+    }
+
+    private static bool IsUnschedulable(V1PodStatus status) =>
+        status.Conditions?.Any(c =>
+            c.Type == "PodScheduled"
+            && string.Equals(c.Status, "False", StringComparison.Ordinal)
+            && c.Reason == "Unschedulable") ?? false;
 }

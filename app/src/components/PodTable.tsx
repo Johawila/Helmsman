@@ -50,9 +50,9 @@ export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) 
               <TableCell>
                 <span className="flex items-center gap-2">
                   <span
-                    className={`size-2 rounded-full ${phaseDot(pod.phase)} ${pod.phase === 'Running' ? 'animate-pulse' : ''}`}
+                    className={`size-2 rounded-full ${statusDot(pod.status)} ${pod.status === 'Running' ? 'animate-pulse' : ''}`}
                   />
-                  {pod.phase}
+                  {pod.status}
                 </span>
               </TableCell>
               <TableCell className="text-right font-mono">
@@ -81,17 +81,17 @@ export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) 
   )
 }
 
-function phaseDot(phase: string): string {
-  switch (phase) {
+function statusDot(status: string): string {
+  switch (status) {
     case 'Running':
       return 'bg-green-500'
+    case 'Completed':
+      return 'bg-muted-foreground'
     case 'Pending':
+    case 'Terminating':
       return 'bg-amber-500'
-    case 'Failed':
-      return 'bg-red-500'
-    case 'Succeeded':
-      return 'bg-muted-foreground'
     default:
-      return 'bg-muted-foreground'
+      // CrashLoopBackOff, ImagePullBackOff, OOMKilled, Error, Failed, Unschedulable, Evicted, …
+      return 'bg-red-500'
   }
 }
