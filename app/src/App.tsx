@@ -21,8 +21,8 @@ function App() {
   const current = contexts.find((c) => c.name === selected)
 
   return (
-    <div className="min-h-screen">
-      <header className="flex items-center justify-between gap-6 border-b px-6 py-3">
+    <div className="flex h-screen flex-col">
+      <header className="flex shrink-0 items-center justify-between gap-6 border-b px-6 py-3">
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-semibold tracking-tight">⎈ Helmsman</h1>
           {current && (
@@ -38,11 +38,11 @@ function App() {
         )}
       </header>
 
-      <main className="p-6">
-        {error && <p className="font-mono text-destructive">{error}</p>}
+      <main className="min-h-0 flex-1">
+        {error && <p className="p-6 font-mono text-destructive">{error}</p>}
 
         {!selected && !error && (
-          <section className="max-w-3xl">
+          <section className="max-w-3xl p-6">
             <h2 className="mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">
               Contexts
             </h2>

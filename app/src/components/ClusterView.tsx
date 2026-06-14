@@ -1,8 +1,10 @@
+import { Box, Briefcase, Clock, Database, Layers, Server } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import CronJobTable from '@/components/CronJobTable'
 import JobTable from '@/components/JobTable'
 import LogSheet from '@/components/LogSheet'
 import PodTable from '@/components/PodTable'
+import ResourceSidebar, { type SidebarKind } from '@/components/ResourceSidebar'
 import Spinner from '@/components/Spinner'
 import WorkloadTable from '@/components/WorkloadTable'
 import {
@@ -27,13 +29,13 @@ import { usePodMetrics } from '@/lib/usePodMetrics'
 type ResourceKind = 'Pods' | 'Deployments' | 'StatefulSets' | 'DaemonSets' | 'Jobs' | 'CronJobs'
 type ResourceItem = PodInfo | WorkloadInfo | JobInfo | CronJobInfo
 
-const KINDS: { value: ResourceKind; method: string }[] = [
-  { value: 'Pods', method: 'StreamPods' },
-  { value: 'Deployments', method: 'StreamDeployments' },
-  { value: 'StatefulSets', method: 'StreamStatefulSets' },
-  { value: 'DaemonSets', method: 'StreamDaemonSets' },
-  { value: 'Jobs', method: 'StreamJobs' },
-  { value: 'CronJobs', method: 'StreamCronJobs' },
+const KINDS: (SidebarKind & { value: ResourceKind; method: string })[] = [
+  { value: 'Pods', method: 'StreamPods', icon: Box },
+  { value: 'Deployments', method: 'StreamDeployments', icon: Layers },
+  { value: 'StatefulSets', method: 'StreamStatefulSets', icon: Database },
+  { value: 'DaemonSets', method: 'StreamDaemonSets', icon: Server },
+  { value: 'Jobs', method: 'StreamJobs', icon: Briefcase },
+  { value: 'CronJobs', method: 'StreamCronJobs', icon: Clock },
 ]
 
 interface ClusterViewProps {
@@ -45,6 +47,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [namespace, setNamespace] = useState<string>('')
   const [kind, setKind] = useState<ResourceKind>('Pods')
+  const [collapsed, setCollapsed] = useState(false)
   const [nsError, setNsError] = useState<string | null>(null)
   const [selectedPod, setSelectedPod] = useState<string | null>(null)
 
@@ -74,53 +77,50 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Select value={namespace} onValueChange={setNamespace}>
-          <SelectTrigger className="w-64">
-            <SelectValue placeholder="Select a namespace…" />
-          </SelectTrigger>
-          <SelectContent>
-            {namespaces.map((ns) => (
-              <SelectItem key={ns} value={ns}>
-                {ns}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="flex h-full">
+      <ResourceSidebar
+        kinds={KINDS}
+        active={kind}
+        onSelect={(v) => setKind(v as ResourceKind)}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
+      />
 
-        <Select value={kind} onValueChange={(v) => setKind(v as ResourceKind)}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {KINDS.map((k) => (
-              <SelectItem key={k.value} value={k.value}>
-                {k.value}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="min-w-0 flex-1 space-y-4 overflow-auto p-6">
+        <div className="flex items-center gap-3">
+          <Select value={namespace} onValueChange={setNamespace}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Select a namespace…" />
+            </SelectTrigger>
+            <SelectContent>
+              {namespaces.map((ns) => (
+                <SelectItem key={ns} value={ns}>
+                  {ns}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        {namespace && <LiveBadge status={status} />}
-        {namespace && loaded && (
-          <span className="text-sm text-muted-foreground">
-            {items.length} {kind.toLowerCase()}
-          </span>
+          {namespace && <LiveBadge status={status} />}
+          {namespace && loaded && (
+            <span className="text-sm text-muted-foreground">
+              {items.length} {kind.toLowerCase()}
+            </span>
+          )}
+        </div>
+
+        {nsError && <p className="font-mono text-destructive">{nsError}</p>}
+        {namespace && !nsError && (
+          <ResourceArea
+            kind={kind}
+            status={status}
+            loaded={loaded}
+            items={items}
+            metrics={metrics}
+            onSelect={openLogs}
+          />
         )}
       </div>
-
-      {nsError && <p className="font-mono text-destructive">{nsError}</p>}
-      {namespace && !nsError && (
-        <ResourceArea
-          kind={kind}
-          status={status}
-          loaded={loaded}
-          items={items}
-          metrics={metrics}
-          onSelect={openLogs}
-        />
-      )}
 
       <LogSheet
         context={context}
