@@ -6,9 +6,10 @@ import type { CronJobInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from
 interface DashboardViewProps {
   context: string
   namespace: string
+  onSelectPod: (pod: string) => void
 }
 
-export default function DashboardView({ context, namespace }: DashboardViewProps) {
+export default function DashboardView({ context, namespace, onSelectPod }: DashboardViewProps) {
   const pods = useLiveResource<PodInfo>('StreamPods', context, namespace)
   const deployments = useLiveResource<WorkloadInfo>('StreamDeployments', context, namespace)
   const statefulSets = useLiveResource<WorkloadInfo>('StreamStatefulSets', context, namespace)
@@ -120,10 +121,12 @@ export default function DashboardView({ context, namespace }: DashboardViewProps
               <ConsumerList
                 label="CPU"
                 items={topCpu.map((m) => ({ name: m.name, value: `${m.cpuMillicores}m` }))}
+                onSelect={onSelectPod}
               />
               <ConsumerList
                 label="Memory"
                 items={topMem.map((m) => ({ name: m.name, value: `${m.memoryMi} Mi` }))}
+                onSelect={onSelectPod}
               />
             </div>
           </section>
@@ -188,16 +191,28 @@ function ProblemRow({ problem }: { problem: Problem }) {
   )
 }
 
-function ConsumerList({ label, items }: { label: string; items: { name: string; value: string }[] }) {
+function ConsumerList({
+  label,
+  items,
+  onSelect,
+}: {
+  label: string
+  items: { name: string; value: string }[]
+  onSelect: (name: string) => void
+}) {
   return (
     <div>
       <div className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</div>
       <div className="space-y-1">
         {items.map((item) => (
-          <div key={item.name} className="flex items-center justify-between gap-3 text-xs">
+          <button
+            key={item.name}
+            onClick={() => onSelect(item.name)}
+            className="flex w-full items-center justify-between gap-3 rounded px-1 py-0.5 text-xs hover:bg-accent/50"
+          >
             <span className="min-w-0 truncate font-mono text-foreground/80">{item.name}</span>
             <span className="shrink-0 tabular-nums text-muted-foreground">{item.value}</span>
-          </div>
+          </button>
         ))}
       </div>
     </div>

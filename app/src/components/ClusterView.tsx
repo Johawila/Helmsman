@@ -131,7 +131,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
 
         {nsError && <p className="font-mono text-destructive">{nsError}</p>}
         {namespace && !nsError && kind === 'Dashboard' && (
-          <DashboardView context={context} namespace={namespace} />
+          <DashboardView context={context} namespace={namespace} onSelectPod={setSelectedPod} />
         )}
         {namespace && !nsError && kind !== 'Dashboard' && (
           <ResourceArea
