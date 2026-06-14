@@ -50,6 +50,17 @@ export interface PodMetricsInfo {
   memoryMi: number
 }
 
+export interface EventInfo {
+  name: string
+  type: string // Normal | Warning
+  reason: string
+  message: string
+  objectKind: string
+  objectName: string
+  count: number
+  lastSeen: string | null
+}
+
 export async function fetchContexts(): Promise<ContextInfo[]> {
   return getJson('/api/contexts')
 }

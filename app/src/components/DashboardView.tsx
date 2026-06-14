@@ -3,7 +3,13 @@ import LoadingField from '@/components/LoadingField'
 import Sparkline from '@/components/Sparkline'
 import { useLiveResource } from '@/lib/useLiveResource'
 import { useMetricsHistory } from '@/lib/useMetricsHistory'
-import type { CronJobInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from '@/lib/api'
+import { formatAge } from '@/lib/kube'
+import type { CronJobInfo, EventInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from '@/lib/api'
+
+// Events carry no meaningful name order; show the most recently seen first.
+const byNewest = (a: EventInfo, b: EventInfo) =>
+  (b.lastSeen ?? '').localeCompare(a.lastSeen ?? '')
+const MAX_EVENTS = 50
 
 // Maps the short kind name used in problems to the ResourceKind value used by the sidebar.
 const KIND_MAP: Record<string, string> = {
@@ -28,6 +34,7 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
   const daemonSets = useLiveResource<WorkloadInfo>('StreamDaemonSets', context, namespace)
   const jobs = useLiveResource<JobInfo>('StreamJobs', context, namespace)
   const cronJobs = useLiveResource<CronJobInfo>('StreamCronJobs', context, namespace)
+  const events = useLiveResource<EventInfo>('StreamEvents', context, namespace, byNewest)
   const { current: metrics, series, totalCpu, totalMem } = useMetricsHistory(context, namespace)
 
   const problems = collectProblems(
@@ -180,6 +187,9 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
           </section>
         )}
       </div>
+
+      {/* Recent warnings */}
+      <EventsPanel events={events.items} onNavigate={onNavigate} />
     </div>
       )}
     </div>
@@ -187,6 +197,56 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+function EventsPanel({
+  events,
+  onNavigate,
+}: {
+  events: EventInfo[]
+  onNavigate: (kind: string) => void
+}) {
+  if (events.length === 0) {
+    return null
+  }
+  return (
+    <section>
+      <h2 className="mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">
+        Recent warnings
+      </h2>
+      <div className="space-y-1">
+        {events.slice(0, MAX_EVENTS).map((e) => (
+          <EventRow key={e.name} event={e} onNavigate={onNavigate} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function EventRow({ event, onNavigate }: { event: EventInfo; onNavigate: (kind: string) => void }) {
+  const kind = KIND_MAP[event.objectKind]
+  const Wrapper = kind ? 'button' : 'div'
+  return (
+    <Wrapper
+      onClick={kind ? () => onNavigate(kind) : undefined}
+      className={`flex w-full items-start gap-3 rounded-lg border bg-card/30 p-2.5 text-left text-xs ${
+        kind ? 'hover:bg-accent/30' : ''
+      }`}
+    >
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+      <span className="w-32 shrink-0 font-medium text-amber-400">{event.reason}</span>
+      <div className="min-w-0 flex-1">
+        <span className="font-mono text-muted-foreground">
+          {event.objectKind}/{event.objectName}
+        </span>
+        <span className="ml-2 text-foreground/80">{event.message}</span>
+      </div>
+      <span className="shrink-0 text-muted-foreground">
+        {event.count > 1 && <span className="mr-2">×{event.count}</span>}
+        {event.lastSeen ? formatAge(event.lastSeen) : ''}
+      </span>
+    </Wrapper>
+  )
+}
 
 function SummaryCard({
   label,

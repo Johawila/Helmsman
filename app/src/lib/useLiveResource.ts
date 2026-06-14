@@ -1,5 +1,5 @@
 import * as signalr from '@microsoft/signalr'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export type LiveStatus = 'connecting' | 'live' | 'reconnecting' | 'error'
 
@@ -15,14 +15,21 @@ interface ResourceEvent<T> {
 // Deleted removes by name. Generic over any DTO with a `name`. `method` selects the hub stream
 // (e.g. 'StreamPods', 'StreamDeployments'). Tears down (and the server-side watch) when method,
 // context or namespace changes, or the component unmounts.
+const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name)
+
 export function useLiveResource<T extends { name: string }>(
   method: string,
   context: string,
   namespace: string,
+  // Sort order for the published list. Defaults to ascending by name. Kept in a ref so passing an
+  // inline comparator doesn't tear down and re-subscribe the stream on every render.
+  compare: (a: T, b: T) => number = byName,
 ) {
   const [items, setItems] = useState<T[]>([])
   const [status, setStatus] = useState<LiveStatus>('connecting')
   const [loaded, setLoaded] = useState(false)
+  const compareRef = useRef(compare)
+  compareRef.current = compare
 
   useEffect(() => {
     if (!namespace) {
@@ -31,17 +38,17 @@ export function useLiveResource<T extends { name: string }>(
       return
     }
 
-    const byName = new Map<string, T>()
-    const publish = () => setItems([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)))
+    const byKey = new Map<string, T>()
+    const publish = () => setItems([...byKey.values()].sort(compareRef.current))
 
     const apply = (event: ResourceEvent<T>) => {
       if (event.type === 'Snapshot') {
-        byName.clear()
-        event.items?.forEach((it) => byName.set(it.name, it))
+        byKey.clear()
+        event.items?.forEach((it) => byKey.set(it.name, it))
       } else if (event.type === 'Deleted') {
-        if (event.name) byName.delete(event.name)
+        if (event.name) byKey.delete(event.name)
       } else if (event.item) {
-        byName.set(event.item.name, event.item)
+        byKey.set(event.item.name, event.item)
       }
       setLoaded(true)
       publish()

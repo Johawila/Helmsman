@@ -161,6 +161,22 @@ public class ClusterReader
     }
 
     /// <summary>
+    /// Live stream of Warning events in the namespace (FailedScheduling, BackOff, OOMKilled, image
+    /// pull errors, …). Normal events are filtered out — they're noise for a health view. Event
+    /// messages are cluster content and are never logged server-side.
+    /// </summary>
+    public IAsyncEnumerable<ResourceEvent<EventInfo>> WatchEventsAsync(string context, string @namespace, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+        return WatchNamespacedAsync<Corev1Event, Corev1EventList, EventInfo>(
+            context,
+            (c, t) => c.CoreV1.ListNamespacedEventAsync(@namespace, cancellationToken: t),
+            (c, rv) => c.CoreV1.ListNamespacedEventWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToEventInfo, e => e.Metadata.Name, ct,
+            include: e => string.Equals(e.Type, "Warning", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Resolves a representative pod for a workload so its logs can be streamed (kubectl-style:
     /// pick a pod matching the workload's selector). Returns null for kinds without a pod selector
     /// (e.g. CronJobs) or when no pods exist.
@@ -203,7 +219,8 @@ public class ClusterReader
         Func<IKubernetes, string, Task<HttpOperationResponse<TList>>> watchFrom,
         Func<TItem, TInfo> map,
         Func<TItem, string> nameOf,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct,
+        Func<TItem, bool>? include = null)
         where TItem : IKubernetesObject<V1ObjectMeta>
         where TList : IKubernetesObject<V1ListMeta>, IItems<TItem>
     {
@@ -212,7 +229,7 @@ public class ClusterReader
         await foreach (ResourceEvent<TInfo> e in WatchResourceAsync<TItem, TList, TInfo>(
             c => listAsync(client, c),
             rv => watchFrom(client, rv),
-            map, nameOf, ct))
+            map, nameOf, ct, include))
         {
             yield return e;
         }
@@ -228,15 +245,18 @@ public class ClusterReader
         Func<string, Task<HttpOperationResponse<TList>>> watchFrom,
         Func<TItem, TInfo> map,
         Func<TItem, string> nameOf,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct,
+        Func<TItem, bool>? include = null)
         where TItem : IKubernetesObject<V1ObjectMeta>
         where TList : IKubernetesObject<V1ListMeta>, IItems<TItem>
     {
+        bool Keep(TItem item) => include?.Invoke(item) ?? true;
+
         while (!ct.IsCancellationRequested)
         {
             TList list = await listAsync(ct);
             yield return ResourceEvent<TInfo>.Snapshot(
-                list.Items.OrderBy(nameOf, StringComparer.Ordinal).Select(map).ToList());
+                list.Items.Where(Keep).OrderBy(nameOf, StringComparer.Ordinal).Select(map).ToList());
 
             // WatchAsync is marked obsolete in v19, but it is the only IAsyncEnumerable-based
             // watch overload; the suggested replacement is callback-based and doesn't fit a stream.
@@ -269,6 +289,13 @@ public class ClusterReader
                     }
 
                     (WatchEventType type, TItem item) = events.Current;
+
+                    // Skip upserts the filter rejects; still honour Deletes so a now-excluded item leaves.
+                    if (type is WatchEventType.Added or WatchEventType.Modified && !Keep(item))
+                    {
+                        continue;
+                    }
+
                     ResourceEvent<TInfo>? delta = type switch
                     {
                         WatchEventType.Added => ResourceEvent<TInfo>.Upsert("Added", map(item)),
@@ -401,6 +428,25 @@ public class ClusterReader
                 : null,
             CreatedAt = Timestamp(c.Metadata),
         };
+
+    private static EventInfo ToEventInfo(Corev1Event e) =>
+        new()
+        {
+            Name = e.Metadata.Name,
+            Type = e.Type ?? "",
+            Reason = e.Reason ?? "",
+            Message = e.Message ?? "",
+            ObjectKind = e.InvolvedObject?.Kind ?? "",
+            ObjectName = e.InvolvedObject?.Name ?? "",
+            Count = e.Count ?? 0,
+            LastSeen = LastSeen(e),
+        };
+
+    private static DateTimeOffset? LastSeen(Corev1Event e)
+    {
+        DateTime? when = e.LastTimestamp ?? e.EventTime ?? e.Metadata?.CreationTimestamp;
+        return when is { } ts ? new DateTimeOffset(ts, TimeSpan.Zero) : null;
+    }
 
     private static string? FirstImage(V1PodTemplateSpec? template) =>
         template?.Spec?.Containers?.FirstOrDefault()?.Image;

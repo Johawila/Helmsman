@@ -35,4 +35,7 @@ public class ResourcesHub : Hub
 
     public IAsyncEnumerable<ResourceEvent<CronJobInfo>> StreamCronJobs(string context, string @namespace, CancellationToken ct) =>
         _reader.WatchCronJobsAsync(context, @namespace, ct);
+
+    public IAsyncEnumerable<ResourceEvent<EventInfo>> StreamEvents(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchEventsAsync(context, @namespace, ct);
 }
