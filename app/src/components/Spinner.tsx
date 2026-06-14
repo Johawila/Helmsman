@@ -1,18 +1,15 @@
-import { cn } from '@/lib/utils'
+import Lottie from 'lottie-react'
+import spinnerAnimation from '@/assets/spinner.json'
 
 interface SpinnerProps {
-  className?: string
   label?: string
+  size?: number
 }
 
-// A track ring with a spinning accent arc.
-export default function Spinner({ className, label }: SpinnerProps) {
+export default function Spinner({ label, size = 80 }: SpinnerProps) {
   return (
-    <span role="status" aria-label={label ?? 'Loading'} className="flex items-center gap-3">
-      <span className={cn('relative inline-block size-6', className)}>
-        <span className="absolute inset-0 rounded-full border-2 border-muted" />
-        <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-foreground border-r-foreground/40" />
-      </span>
+    <span role="status" aria-label={label ?? 'Loading'} className="flex flex-col items-center gap-2">
+      <Lottie animationData={spinnerAnimation} loop style={{ width: size, height: size }} />
       {label && <span className="text-sm text-muted-foreground">{label}</span>}
     </span>
   )
