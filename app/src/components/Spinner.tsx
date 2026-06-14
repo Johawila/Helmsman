@@ -1,4 +1,7 @@
-import { LottiePlayer as Lottie } from 'lottie-react'
+import * as LottieLib from 'lottie-react'
+// lottie-react is CJS; Vite's ESM interop lands the component on .default
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const Lottie = (LottieLib.default ?? LottieLib) as React.ComponentType<any>
 import spinnerAnimation from '@/assets/spinner.json'
 
 interface SpinnerProps {
