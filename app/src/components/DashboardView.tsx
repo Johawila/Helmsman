@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import Spinner from '@/components/Spinner'
 import { useLiveResource } from '@/lib/useLiveResource'
 import { usePodMetrics } from '@/lib/usePodMetrics'
 import type { CronJobInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from '@/lib/api'
@@ -49,7 +50,9 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
 
   if (!allLoaded) {
     return (
-      <div className="p-6 text-sm text-muted-foreground">Loading dashboard…</div>
+      <div className="flex justify-center py-20">
+        <Spinner label="Loading dashboard…" />
+      </div>
     )
   }
 
@@ -178,7 +181,7 @@ function SummaryCard({
       onClick={onNavigate}
       className="rounded-lg border bg-card/30 p-3 text-left hover:bg-accent/30"
     >
-      <div className="mb-1 text-xs text-muted-foreground">{label}</div>
+      <div className="mb-1 text-xs text-muted-foreground hover:underline">{label}</div>
       <div className={`text-xl font-semibold tabular-nums ${color}`}>
         {ok}
         <span className="text-sm font-normal text-muted-foreground">/{total}</span>
