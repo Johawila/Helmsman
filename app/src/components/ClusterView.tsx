@@ -1,4 +1,4 @@
-import { Box, Briefcase, Clock, Database, LayoutDashboard, Layers, Server } from 'lucide-react'
+import { Box, Briefcase, Clock, Database, LayoutDashboard, Layers, Pin, Server } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import CronJobTable from '@/components/CronJobTable'
 import DashboardView from '@/components/DashboardView'
@@ -26,6 +26,7 @@ import {
 } from '@/lib/api'
 import { useLiveResource, type LiveStatus } from '@/lib/useLiveResource'
 import { usePodMetrics } from '@/lib/usePodMetrics'
+import { clearDefaultNamespace, getDefaultNamespace, setDefaultNamespace } from '@/lib/defaults'
 
 type ResourceKind =
   | 'Dashboard'
@@ -64,6 +65,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const [collapsed, setCollapsed] = useState(false)
   const [nsError, setNsError] = useState<string | null>(null)
   const [selectedPod, setSelectedPod] = useState<string | null>(null)
+  const [defaultNs, setDefaultNs] = useState<string | null>(null)
 
   const method = WORKLOAD_KINDS.find((k) => k.value === kind)?.method ?? ''
   // Skip streaming on the dashboard — DashboardView manages its own streams.
@@ -75,14 +77,27 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const metrics = usePodMetrics(context, kind === 'Pods' ? namespace : '')
 
   useEffect(() => {
+    const pinned = getDefaultNamespace(context)
+    setDefaultNs(pinned)
     setNsError(null)
     fetchNamespaces(context)
       .then((ns) => {
         setNamespaces(ns)
-        setNamespace(pickDefault(ns, defaultNamespace))
+        // Pinned default wins, then the context's kubeconfig namespace, then sensible fallbacks.
+        setNamespace(pickDefault(ns, pinned ?? defaultNamespace))
       })
       .catch((e) => setNsError(String(e)))
   }, [context, defaultNamespace])
+
+  const toggleDefaultNamespace = () => {
+    if (defaultNs === namespace) {
+      clearDefaultNamespace(context)
+      setDefaultNs(null)
+    } else {
+      setDefaultNamespace(context, namespace)
+      setDefaultNs(namespace)
+    }
+  }
 
   // Logs always come from a pod: pods open directly; workloads resolve to one of their pods.
   const openLogs = (name: string) => {
@@ -120,6 +135,23 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
               ))}
             </SelectContent>
           </Select>
+
+          {namespace && (
+            <button
+              onClick={toggleDefaultNamespace}
+              title={
+                defaultNs === namespace
+                  ? 'Default namespace — click to unset'
+                  : 'Set as default namespace'
+              }
+              aria-pressed={defaultNs === namespace}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Pin
+                className={`size-4 ${defaultNs === namespace ? 'fill-current text-foreground' : ''}`}
+              />
+            </button>
+          )}
 
           {namespace && kind !== 'Dashboard' && <LiveBadge status={status} />}
           {namespace && kind !== 'Dashboard' && loaded && (
