@@ -3,13 +3,23 @@ import { useLiveResource } from '@/lib/useLiveResource'
 import { usePodMetrics } from '@/lib/usePodMetrics'
 import type { CronJobInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from '@/lib/api'
 
+// Maps the short kind name used in problems to the ResourceKind value used by the sidebar.
+const KIND_MAP: Record<string, string> = {
+  Pod: 'Pods',
+  Deployment: 'Deployments',
+  StatefulSet: 'StatefulSets',
+  DaemonSet: 'DaemonSets',
+  Job: 'Jobs',
+}
+
 interface DashboardViewProps {
   context: string
   namespace: string
   onSelectPod: (pod: string) => void
+  onNavigate: (kind: string) => void
 }
 
-export default function DashboardView({ context, namespace, onSelectPod }: DashboardViewProps) {
+export default function DashboardView({ context, namespace, onSelectPod, onNavigate }: DashboardViewProps) {
   const pods = useLiveResource<PodInfo>('StreamPods', context, namespace)
   const deployments = useLiveResource<WorkloadInfo>('StreamDeployments', context, namespace)
   const statefulSets = useLiveResource<WorkloadInfo>('StreamStatefulSets', context, namespace)
@@ -105,7 +115,7 @@ export default function DashboardView({ context, namespace, onSelectPod }: Dashb
           ) : (
             <div className="space-y-1.5">
               {problems.map((p, i) => (
-                <ProblemRow key={i} problem={p} />
+                <ProblemRow key={i} problem={p} onNavigate={() => onNavigate(KIND_MAP[p.kind] ?? p.kind)} />
               ))}
             </div>
           )}
@@ -176,18 +186,21 @@ interface Problem {
   severity: 'error' | 'warning'
 }
 
-function ProblemRow({ problem }: { problem: Problem }) {
+function ProblemRow({ problem, onNavigate }: { problem: Problem; onNavigate: () => void }) {
   const Icon = problem.severity === 'error' ? XCircle : AlertTriangle
   const iconColor = problem.severity === 'error' ? 'text-destructive' : 'text-amber-400'
   return (
-    <div className="flex items-start gap-3 rounded-lg border bg-card/30 p-3 text-sm">
+    <button
+      onClick={onNavigate}
+      className="flex w-full items-start gap-3 rounded-lg border bg-card/30 p-3 text-sm text-left hover:bg-accent/30"
+    >
       <Icon className={`mt-0.5 size-4 shrink-0 ${iconColor}`} />
       <div className="min-w-0 flex-1">
         <span className="font-mono text-xs text-muted-foreground">{problem.kind}/</span>
-        <span className="font-medium">{problem.name}</span>
+        <span className="font-medium hover:underline">{problem.name}</span>
       </div>
       <span className="shrink-0 text-muted-foreground">{problem.reason}</span>
-    </div>
+    </button>
   )
 }
 
