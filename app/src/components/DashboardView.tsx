@@ -66,24 +66,28 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
             ok={pods.items.filter(isHealthyPod).length}
             total={pods.items.length}
             healthy={pods.items.every(isHealthyPod)}
+            onNavigate={() => onNavigate('Pods')}
           />
           <SummaryCard
             label="Deployments"
             ok={deployments.items.filter(isHealthyWorkload).length}
             total={deployments.items.length}
             healthy={deployments.items.every(isHealthyWorkload)}
+            onNavigate={() => onNavigate('Deployments')}
           />
           <SummaryCard
             label="StatefulSets"
             ok={statefulSets.items.filter(isHealthyWorkload).length}
             total={statefulSets.items.length}
             healthy={statefulSets.items.every(isHealthyWorkload)}
+            onNavigate={() => onNavigate('StatefulSets')}
           />
           <SummaryCard
             label="DaemonSets"
             ok={daemonSets.items.filter(isHealthyWorkload).length}
             total={daemonSets.items.length}
             healthy={daemonSets.items.every(isHealthyWorkload)}
+            onNavigate={() => onNavigate('DaemonSets')}
           />
           <SummaryCard
             label="Jobs"
@@ -91,12 +95,14 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
             total={jobs.items.length}
             healthy={jobs.items.every((j) => j.failed === 0)}
             failCount={jobs.items.reduce((acc, j) => acc + j.failed, 0)}
+            onNavigate={() => onNavigate('Jobs')}
           />
           <SummaryCard
             label="CronJobs"
             ok={cronJobs.items.filter((c) => !c.suspended).length}
             total={cronJobs.items.length}
             healthy={cronJobs.items.every((c) => !c.suspended)}
+            onNavigate={() => onNavigate('CronJobs')}
           />
         </div>
       </section>
@@ -154,19 +160,24 @@ function SummaryCard({
   total,
   healthy,
   failCount,
+  onNavigate,
 }: {
   label: string
   ok: number
   total: number
   healthy: boolean
   failCount?: number
+  onNavigate: () => void
 }) {
   const hasFailures = (failCount ?? 0) > 0
   const color =
     total === 0 ? 'text-muted-foreground' : healthy && !hasFailures ? 'text-green-400' : 'text-amber-400'
 
   return (
-    <div className="rounded-lg border bg-card/30 p-3">
+    <button
+      onClick={onNavigate}
+      className="rounded-lg border bg-card/30 p-3 text-left hover:bg-accent/30"
+    >
       <div className="mb-1 text-xs text-muted-foreground">{label}</div>
       <div className={`text-xl font-semibold tabular-nums ${color}`}>
         {ok}
@@ -175,7 +186,7 @@ function SummaryCard({
       {hasFailures && (
         <div className="mt-0.5 text-xs text-destructive">{failCount} failed</div>
       )}
-    </div>
+    </button>
   )
 }
 
