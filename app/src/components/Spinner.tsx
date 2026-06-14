@@ -1,7 +1,12 @@
-import * as LottieLib from 'lottie-react'
-// lottie-react is CJS; Vite's ESM interop lands the component on .default
+import LottieImport from 'lottie-react'
+
+// lottie-react ships a UMD build that Vite pre-bundles as `export default <exports object>`,
+// so the default import is `{ default: Lottie, ... }` rather than the component itself.
+// Unwrap one level when needed; fall through cleanly if a future build serves proper ESM.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const Lottie = (LottieLib.default ?? LottieLib) as React.ComponentType<any>
+const Lottie = (
+  typeof LottieImport === 'function' ? LottieImport : (LottieImport as any).default
+) as React.ComponentType<any>
 import spinnerAnimation from '@/assets/spinner.json'
 
 interface SpinnerProps {
