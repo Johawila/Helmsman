@@ -9,6 +9,7 @@ export interface SidebarKind {
 interface ResourceSidebarProps {
   dashboard: SidebarKind
   workloads: SidebarKind[]
+  cluster: SidebarKind[]
   active: string
   onSelect: (value: string) => void
   collapsed: boolean
@@ -18,6 +19,7 @@ interface ResourceSidebarProps {
 export default function ResourceSidebar({
   dashboard,
   workloads,
+  cluster,
   active,
   onSelect,
   collapsed,
@@ -54,6 +56,20 @@ export default function ResourceSidebar({
       )}
       <ul className="flex flex-col gap-0.5 px-2">
         {workloads.map((kind) => (
+          <li key={kind.value}>
+            <KindButton kind={kind} active={active} onSelect={onSelect} collapsed={collapsed} />
+          </li>
+        ))}
+      </ul>
+
+      {/* Cluster group */}
+      {!collapsed && (
+        <div className="mt-3 px-3 pb-1 text-xs font-medium tracking-wider text-muted-foreground uppercase">
+          Cluster
+        </div>
+      )}
+      <ul className="flex flex-col gap-0.5 px-2">
+        {cluster.map((kind) => (
           <li key={kind.value}>
             <KindButton kind={kind} active={active} onSelect={onSelect} collapsed={collapsed} />
           </li>

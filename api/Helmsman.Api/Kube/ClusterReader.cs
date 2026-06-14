@@ -103,7 +103,7 @@ public class ClusterReader
     public IAsyncEnumerable<ResourceEvent<PodInfo>> WatchPodsAsync(string context, string @namespace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
-        return WatchNamespacedAsync<V1Pod, V1PodList, PodInfo>(
+        return WatchWithClientAsync<V1Pod, V1PodList, PodInfo>(
             context,
             (c, t) => c.CoreV1.ListNamespacedPodAsync(@namespace, cancellationToken: t),
             (c, rv) => c.CoreV1.ListNamespacedPodWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
@@ -113,7 +113,7 @@ public class ClusterReader
     public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> WatchDeploymentsAsync(string context, string @namespace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
-        return WatchNamespacedAsync<V1Deployment, V1DeploymentList, WorkloadInfo>(
+        return WatchWithClientAsync<V1Deployment, V1DeploymentList, WorkloadInfo>(
             context,
             (c, t) => c.AppsV1.ListNamespacedDeploymentAsync(@namespace, cancellationToken: t),
             (c, rv) => c.AppsV1.ListNamespacedDeploymentWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
@@ -123,7 +123,7 @@ public class ClusterReader
     public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> WatchStatefulSetsAsync(string context, string @namespace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
-        return WatchNamespacedAsync<V1StatefulSet, V1StatefulSetList, WorkloadInfo>(
+        return WatchWithClientAsync<V1StatefulSet, V1StatefulSetList, WorkloadInfo>(
             context,
             (c, t) => c.AppsV1.ListNamespacedStatefulSetAsync(@namespace, cancellationToken: t),
             (c, rv) => c.AppsV1.ListNamespacedStatefulSetWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
@@ -133,7 +133,7 @@ public class ClusterReader
     public IAsyncEnumerable<ResourceEvent<WorkloadInfo>> WatchDaemonSetsAsync(string context, string @namespace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
-        return WatchNamespacedAsync<V1DaemonSet, V1DaemonSetList, WorkloadInfo>(
+        return WatchWithClientAsync<V1DaemonSet, V1DaemonSetList, WorkloadInfo>(
             context,
             (c, t) => c.AppsV1.ListNamespacedDaemonSetAsync(@namespace, cancellationToken: t),
             (c, rv) => c.AppsV1.ListNamespacedDaemonSetWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
@@ -143,7 +143,7 @@ public class ClusterReader
     public IAsyncEnumerable<ResourceEvent<JobInfo>> WatchJobsAsync(string context, string @namespace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
-        return WatchNamespacedAsync<V1Job, V1JobList, JobInfo>(
+        return WatchWithClientAsync<V1Job, V1JobList, JobInfo>(
             context,
             (c, t) => c.BatchV1.ListNamespacedJobAsync(@namespace, cancellationToken: t),
             (c, rv) => c.BatchV1.ListNamespacedJobWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
@@ -153,7 +153,7 @@ public class ClusterReader
     public IAsyncEnumerable<ResourceEvent<CronJobInfo>> WatchCronJobsAsync(string context, string @namespace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
-        return WatchNamespacedAsync<V1CronJob, V1CronJobList, CronJobInfo>(
+        return WatchWithClientAsync<V1CronJob, V1CronJobList, CronJobInfo>(
             context,
             (c, t) => c.BatchV1.ListNamespacedCronJobAsync(@namespace, cancellationToken: t),
             (c, rv) => c.BatchV1.ListNamespacedCronJobWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
@@ -168,12 +168,25 @@ public class ClusterReader
     public IAsyncEnumerable<ResourceEvent<EventInfo>> WatchEventsAsync(string context, string @namespace, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
-        return WatchNamespacedAsync<Corev1Event, Corev1EventList, EventInfo>(
+        return WatchWithClientAsync<Corev1Event, Corev1EventList, EventInfo>(
             context,
             (c, t) => c.CoreV1.ListNamespacedEventAsync(@namespace, cancellationToken: t),
             (c, rv) => c.CoreV1.ListNamespacedEventWithHttpMessagesAsync(@namespace, watch: true, resourceVersion: rv, cancellationToken: ct),
             ToEventInfo, e => e.Metadata.Name, ct,
             include: e => string.Equals(e.Type, "Warning", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Live stream of cluster nodes. Cluster-scoped (not namespaced), but shares the same
+    /// list+watch loop via the namespace-agnostic list/watch funcs.
+    /// </summary>
+    public IAsyncEnumerable<ResourceEvent<NodeInfo>> WatchNodesAsync(string context, CancellationToken ct)
+    {
+        return WatchWithClientAsync<V1Node, V1NodeList, NodeInfo>(
+            context,
+            (c, t) => c.CoreV1.ListNodeAsync(cancellationToken: t),
+            (c, rv) => c.CoreV1.ListNodeWithHttpMessagesAsync(watch: true, resourceVersion: rv, cancellationToken: ct),
+            ToNodeInfo, n => n.Metadata.Name, ct);
     }
 
     /// <summary>
@@ -213,7 +226,7 @@ public class ClusterReader
     /// Creates a Kubernetes client for the context and streams a generic namespaced resource,
     /// owning the client for the life of the stream. The list/watch funcs receive the client.
     /// </summary>
-    private async IAsyncEnumerable<ResourceEvent<TInfo>> WatchNamespacedAsync<TItem, TList, TInfo>(
+    private async IAsyncEnumerable<ResourceEvent<TInfo>> WatchWithClientAsync<TItem, TList, TInfo>(
         string context,
         Func<IKubernetes, CancellationToken, Task<TList>> listAsync,
         Func<IKubernetes, string, Task<HttpOperationResponse<TList>>> watchFrom,
@@ -446,6 +459,57 @@ public class ClusterReader
     {
         DateTime? when = e.LastTimestamp ?? e.EventTime ?? e.Metadata?.CreationTimestamp;
         return when is { } ts ? new DateTimeOffset(ts, TimeSpan.Zero) : null;
+    }
+
+    private static NodeInfo ToNodeInfo(V1Node node)
+    {
+        IList<V1NodeCondition> conditions = node.Status?.Conditions ?? [];
+        bool Cond(string type) =>
+            conditions.Any(c => c.Type == type && string.Equals(c.Status, "True", StringComparison.Ordinal));
+
+        bool ready = Cond("Ready");
+        string status = ready ? "Ready" : "NotReady";
+        if (node.Spec?.Unschedulable == true)
+        {
+            status += ",SchedulingDisabled";
+        }
+
+        IDictionary<string, ResourceQuantity> allocatable =
+            node.Status?.Allocatable ?? new Dictionary<string, ResourceQuantity>();
+
+        return new NodeInfo
+        {
+            Name = node.Metadata.Name,
+            Status = status,
+            Roles = NodeRoles(node.Metadata?.Labels),
+            KubeletVersion = node.Status?.NodeInfo?.KubeletVersion ?? "",
+            CpuMillicores = allocatable.TryGetValue("cpu", out ResourceQuantity? cpu)
+                ? (int)Math.Round(cpu.ToDecimal() * 1000m)
+                : 0,
+            MemoryMi = allocatable.TryGetValue("memory", out ResourceQuantity? mem)
+                ? (int)Math.Round(mem.ToDecimal() / (1024m * 1024m))
+                : 0,
+            MemoryPressure = Cond("MemoryPressure"),
+            DiskPressure = Cond("DiskPressure"),
+            PidPressure = Cond("PIDPressure"),
+            CreatedAt = Timestamp(node.Metadata),
+        };
+    }
+
+    private static string NodeRoles(IDictionary<string, string>? labels)
+    {
+        if (labels is null)
+        {
+            return "<none>";
+        }
+        const string prefix = "node-role.kubernetes.io/";
+        List<string> roles = labels.Keys
+            .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(k => k[prefix.Length..])
+            .Where(r => r.Length > 0)
+            .OrderBy(r => r, StringComparer.Ordinal)
+            .ToList();
+        return roles.Count > 0 ? string.Join(",", roles) : "<none>";
     }
 
     private static string? FirstImage(V1PodTemplateSpec? template) =>

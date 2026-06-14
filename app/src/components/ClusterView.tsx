@@ -1,10 +1,11 @@
-import { Box, Briefcase, Clock, Database, LayoutDashboard, Layers, Pin, Server } from 'lucide-react'
+import { Box, Briefcase, Clock, Cpu, Database, LayoutDashboard, Layers, Pin, Server } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import CronJobTable from '@/components/CronJobTable'
 import DashboardView from '@/components/DashboardView'
 import JobTable from '@/components/JobTable'
 import LoadingField from '@/components/LoadingField'
 import LogSheet from '@/components/LogSheet'
+import NodeTable from '@/components/NodeTable'
 import PodTable from '@/components/PodTable'
 import ResourceSidebar, { type SidebarKind } from '@/components/ResourceSidebar'
 import WorkloadTable from '@/components/WorkloadTable'
@@ -20,6 +21,7 @@ import {
   resolvePod,
   type CronJobInfo,
   type JobInfo,
+  type NodeInfo,
   type PodInfo,
   type PodMetricsInfo,
   type WorkloadInfo,
@@ -36,7 +38,11 @@ type ResourceKind =
   | 'DaemonSets'
   | 'Jobs'
   | 'CronJobs'
-type ResourceItem = PodInfo | WorkloadInfo | JobInfo | CronJobInfo
+  | 'Nodes'
+type ResourceItem = PodInfo | WorkloadInfo | JobInfo | CronJobInfo | NodeInfo
+
+// Cluster-scoped kinds don't need a namespace; the stream runs against the whole cluster.
+const CLUSTER_SCOPED: ResourceKind[] = ['Nodes']
 
 const DASHBOARD_KIND: SidebarKind & { value: ResourceKind; method: string } = {
   value: 'Dashboard',
@@ -53,6 +59,12 @@ const WORKLOAD_KINDS: (SidebarKind & { value: ResourceKind; method: string })[] 
   { value: 'CronJobs', method: 'StreamCronJobs', icon: Clock },
 ]
 
+const CLUSTER_KINDS: (SidebarKind & { value: ResourceKind; method: string })[] = [
+  { value: 'Nodes', method: 'StreamNodes', icon: Cpu },
+]
+
+const ALL_KINDS = [...WORKLOAD_KINDS, ...CLUSTER_KINDS]
+
 interface ClusterViewProps {
   context: string
   defaultNamespace: string | null
@@ -67,14 +79,17 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const [selectedPod, setSelectedPod] = useState<string | null>(null)
   const [defaultNs, setDefaultNs] = useState<string | null>(null)
 
-  const method = WORKLOAD_KINDS.find((k) => k.value === kind)?.method ?? ''
-  // Skip streaming on the dashboard — DashboardView manages its own streams.
-  const { items, status, loaded } = useLiveResource<ResourceItem>(
-    method,
-    context,
-    kind === 'Dashboard' ? '' : namespace,
-  )
+  const clusterScoped = CLUSTER_SCOPED.includes(kind)
+  const method = ALL_KINDS.find((k) => k.value === kind)?.method ?? ''
+  // Dashboard manages its own streams; cluster-scoped kinds stream regardless of namespace
+  // (a constant placeholder keeps useLiveResource active — the server ignores it).
+  const streamNamespace = kind === 'Dashboard' ? '' : clusterScoped ? 'cluster' : namespace
+  const { items, status, loaded } = useLiveResource<ResourceItem>(method, context, streamNamespace)
   const metrics = usePodMetrics(context, kind === 'Pods' ? namespace : '')
+
+  // A resource table is shown for any non-dashboard kind once it has something to stream:
+  // cluster-scoped kinds always, namespaced kinds once a namespace is selected.
+  const streaming = kind !== 'Dashboard' && (clusterScoped || !!namespace)
 
   useEffect(() => {
     const pinned = getDefaultNamespace(context)
@@ -115,6 +130,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
       <ResourceSidebar
         dashboard={DASHBOARD_KIND}
         workloads={WORKLOAD_KINDS}
+        cluster={CLUSTER_KINDS}
         active={kind}
         onSelect={(v) => setKind(v as ResourceKind)}
         collapsed={collapsed}
@@ -123,45 +139,49 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
 
       <div className="min-w-0 flex-1 space-y-4 overflow-auto p-6">
         <div className="flex items-center gap-3">
-          <Select value={namespace} onValueChange={(v) => v && setNamespace(v)}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Select a namespace…" />
-            </SelectTrigger>
-            <SelectContent>
-              {namespaces.map((ns) => (
-                <SelectItem key={ns} value={ns}>
-                  {ns}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {!clusterScoped && (
+            <>
+              <Select value={namespace} onValueChange={(v) => v && setNamespace(v)}>
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Select a namespace…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {namespaces.map((ns) => (
+                    <SelectItem key={ns} value={ns}>
+                      {ns}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-          {namespace && (
-            <button
-              onClick={toggleDefaultNamespace}
-              title={
-                defaultNs === namespace
-                  ? 'Default namespace — click to unset'
-                  : 'Set as default namespace'
-              }
-              aria-pressed={defaultNs === namespace}
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Pin
-                className={`size-4 ${defaultNs === namespace ? 'fill-current text-foreground' : ''}`}
-              />
-            </button>
+              {namespace && (
+                <button
+                  onClick={toggleDefaultNamespace}
+                  title={
+                    defaultNs === namespace
+                      ? 'Default namespace — click to unset'
+                      : 'Set as default namespace'
+                  }
+                  aria-pressed={defaultNs === namespace}
+                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <Pin
+                    className={`size-4 ${defaultNs === namespace ? 'fill-current text-foreground' : ''}`}
+                  />
+                </button>
+              )}
+            </>
           )}
 
-          {namespace && kind !== 'Dashboard' && <LiveBadge status={status} />}
-          {namespace && kind !== 'Dashboard' && loaded && (
+          {streaming && <LiveBadge status={status} />}
+          {streaming && loaded && (
             <span className="text-sm text-muted-foreground">
               {items.length} {kind.toLowerCase()}
             </span>
           )}
         </div>
 
-        {nsError && <p className="font-mono text-destructive">{nsError}</p>}
+        {nsError && !clusterScoped && <p className="font-mono text-destructive">{nsError}</p>}
         {namespace && !nsError && kind === 'Dashboard' && (
           <DashboardView
             context={context}
@@ -170,7 +190,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             onNavigate={(k) => setKind(k as ResourceKind)}
           />
         )}
-        {namespace && !nsError && kind !== 'Dashboard' && (
+        {streaming && (
           <ResourceArea
             kind={kind as WorkloadKind}
             status={status}
@@ -239,6 +259,8 @@ function renderResource(
       return <JobTable jobs={items as JobInfo[]} onSelect={onSelect} />
     case 'CronJobs':
       return <CronJobTable cronJobs={items as CronJobInfo[]} />
+    case 'Nodes':
+      return <NodeTable nodes={items as NodeInfo[]} />
     default:
       return (
         <WorkloadTable kindLabel={kind} workloads={items as WorkloadInfo[]} onSelect={onSelect} />

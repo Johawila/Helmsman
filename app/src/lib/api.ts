@@ -53,6 +53,19 @@ export interface PodMetricsInfo {
   memoryMi: number
 }
 
+export interface NodeInfo {
+  name: string
+  status: string
+  roles: string
+  kubeletVersion: string
+  cpuMillicores: number
+  memoryMi: number
+  memoryPressure: boolean
+  diskPressure: boolean
+  pidPressure: boolean
+  createdAt: string | null
+}
+
 export interface EventInfo {
   name: string
   type: string // Normal | Warning

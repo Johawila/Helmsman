@@ -38,4 +38,8 @@ public class ResourcesHub : Hub
 
     public IAsyncEnumerable<ResourceEvent<EventInfo>> StreamEvents(string context, string @namespace, CancellationToken ct) =>
         _reader.WatchEventsAsync(context, @namespace, ct);
+
+    // Nodes are cluster-scoped; the namespace argument is accepted for a uniform client API and ignored.
+    public IAsyncEnumerable<ResourceEvent<NodeInfo>> StreamNodes(string context, string @namespace, CancellationToken ct) =>
+        _reader.WatchNodesAsync(context, ct);
 }
