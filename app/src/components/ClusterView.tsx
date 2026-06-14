@@ -108,7 +108,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
 
       <div className="min-w-0 flex-1 space-y-4 overflow-auto p-6">
         <div className="flex items-center gap-3">
-          <Select value={namespace} onValueChange={setNamespace}>
+          <Select value={namespace} onValueChange={(v) => v && setNamespace(v)}>
             <SelectTrigger className="w-64">
               <SelectValue placeholder="Select a namespace…" />
             </SelectTrigger>
