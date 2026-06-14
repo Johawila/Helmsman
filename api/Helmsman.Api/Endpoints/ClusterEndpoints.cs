@@ -70,6 +70,28 @@ public static class ClusterEndpoints
             }
         });
 
+        // Pods scheduled on a node (across namespaces), so the Nodes view can drill into pod logs.
+        app.MapGet("/api/node-pods", async (string? context, string? node, ClusterReader reader, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(context))
+            {
+                return Results.BadRequest("A 'context' query parameter is required.");
+            }
+            if (string.IsNullOrWhiteSpace(node))
+            {
+                return Results.BadRequest("A 'node' query parameter is required.");
+            }
+
+            try
+            {
+                return Results.Ok(await reader.ListPodsOnNodeAsync(context, node, ct));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
         // Resolves a workload (Deployment/StatefulSet/DaemonSet/Job) to a representative pod so
         // its logs can be streamed. Returns { pod: null } when there's no matching pod.
         app.MapGet("/api/resolve-pod", async (string? context, string? @namespace, string? kind, string? name, ClusterReader reader, CancellationToken ct) =>

@@ -7,6 +7,8 @@ export interface ContextInfo {
 
 export interface PodInfo {
   name: string
+  // Owning namespace; present for cross-namespace listings (pods on a node).
+  namespace?: string
   phase: string
   // Derived kubectl-style status (CrashLoopBackOff, OOMKilled, Completed, …); drives health.
   // Optional so an older backend without this field degrades to `phase` rather than breaking.
@@ -89,6 +91,12 @@ export async function fetchNamespaces(context: string): Promise<string[]> {
 export async function fetchMetrics(context: string, namespace: string): Promise<PodMetricsInfo[]> {
   const q = new URLSearchParams({ context, namespace })
   return getJson(`/api/metrics?${q}`)
+}
+
+// Pods scheduled on a node, across namespaces.
+export async function fetchNodePods(context: string, node: string): Promise<PodInfo[]> {
+  const q = new URLSearchParams({ context, node })
+  return getJson(`/api/node-pods?${q}`)
 }
 
 // Resolves a workload to one of its pods (for log streaming). Returns null when the kind has no

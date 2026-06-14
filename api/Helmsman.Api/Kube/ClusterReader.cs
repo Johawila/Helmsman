@@ -56,6 +56,31 @@ public class ClusterReader
     }
 
     /// <summary>
+    /// Lists pods scheduled on a given node, across all namespaces (via a fieldSelector on
+    /// spec.nodeName). Used to drill into a node and reach pod logs from there.
+    /// </summary>
+    public async Task<IReadOnlyList<PodInfo>> ListPodsOnNodeAsync(
+        string context,
+        string node,
+        CancellationToken ct
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(node);
+
+        using IKubernetes client = _factory.CreateClient(context);
+        V1PodList pods = await client.CoreV1.ListPodForAllNamespacesAsync(
+            fieldSelector: $"spec.nodeName={node}",
+            cancellationToken: ct
+        );
+        return pods
+            .Items.Select(ToPodInfo)
+            .OrderBy(p => p.Namespace, StringComparer.Ordinal)
+            .ThenBy(p => p.Name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
     /// Current CPU/memory usage per pod from metrics-server (metrics.k8s.io). Polled, not watched —
     /// the metrics API has no watch. Pods without samples (e.g. just-started or completed) are omitted.
     /// </summary>
@@ -535,6 +560,7 @@ public class ClusterReader
         return new PodInfo
         {
             Name = pod.Metadata.Name,
+            Namespace = pod.Metadata.NamespaceProperty ?? "",
             Phase = pod.Status?.Phase ?? "Unknown",
             Status = DerivePodStatus(pod),
             ReadyContainers = statuses.Count(s => s.Ready),

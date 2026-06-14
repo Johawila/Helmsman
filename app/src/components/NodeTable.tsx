@@ -11,9 +11,10 @@ import { formatAge } from '@/lib/kube'
 
 interface NodeTableProps {
   nodes: NodeInfo[]
+  onSelect: (node: string) => void
 }
 
-export default function NodeTable({ nodes }: NodeTableProps) {
+export default function NodeTable({ nodes, onSelect }: NodeTableProps) {
   if (nodes.length === 0) {
     return <p className="text-muted-foreground">No nodes found.</p>
   }
@@ -41,7 +42,15 @@ export default function NodeTable({ nodes }: NodeTableProps) {
           ].filter(Boolean) as string[]
           return (
             <TableRow key={node.name}>
-              <TableCell className="font-mono">{node.name}</TableCell>
+              <TableCell>
+                <button
+                  className="font-mono text-foreground hover:text-primary hover:underline"
+                  onClick={() => onSelect(node.name)}
+                  title="View pods on this node"
+                >
+                  {node.name}
+                </button>
+              </TableCell>
               <TableCell>
                 <span className="flex items-center gap-2">
                   <span

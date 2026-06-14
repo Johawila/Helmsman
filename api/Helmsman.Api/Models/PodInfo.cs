@@ -4,6 +4,9 @@ public class PodInfo
 {
     public string Name { get; set; } = "";
 
+    /// <summary>Owning namespace. Populated for cross-namespace listings (e.g. pods on a node).</summary>
+    public string Namespace { get; set; } = "";
+
     /// <summary>Raw pod phase (Pending/Running/Succeeded/Failed/Unknown).</summary>
     public string Phase { get; set; } = "";
 

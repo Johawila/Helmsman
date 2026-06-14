@@ -5,6 +5,7 @@ import DashboardView from '@/components/DashboardView'
 import JobTable from '@/components/JobTable'
 import LoadingField from '@/components/LoadingField'
 import LogSheet from '@/components/LogSheet'
+import NodePodsSheet from '@/components/NodePodsSheet'
 import NodeTable from '@/components/NodeTable'
 import PodTable from '@/components/PodTable'
 import ResourceSidebar, { type SidebarKind } from '@/components/ResourceSidebar'
@@ -76,7 +77,9 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const [kind, setKind] = useState<ResourceKind>('Dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const [nsError, setNsError] = useState<string | null>(null)
-  const [selectedPod, setSelectedPod] = useState<string | null>(null)
+  // A selected pod carries its namespace, since pods reached via a node span namespaces.
+  const [selectedPod, setSelectedPod] = useState<{ namespace: string; name: string } | null>(null)
+  const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [defaultNs, setDefaultNs] = useState<string | null>(null)
 
   const clusterScoped = CLUSTER_SCOPED.includes(kind)
@@ -119,13 +122,14 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   }
 
   // Logs always come from a pod: pods open directly; workloads resolve to one of their pods.
+  // These come from a namespaced view, so they use the currently-selected namespace.
   const openLogs = (name: string) => {
     if (kind === 'Pods') {
-      setSelectedPod(name)
+      setSelectedPod({ namespace, name })
       return
     }
     resolvePod(context, namespace, kind, name)
-      .then((pod) => pod && setSelectedPod(pod))
+      .then((pod) => pod && setSelectedPod({ namespace, name: pod }))
       .catch(() => {})
   }
 
@@ -190,7 +194,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
           <DashboardView
             context={context}
             namespace={namespace}
-            onSelectPod={setSelectedPod}
+            onSelectPod={(name) => setSelectedPod({ namespace, name })}
             onNavigate={(k) => setKind(k as ResourceKind)}
           />
         )}
@@ -204,14 +208,22 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             items={items}
             metrics={metrics}
             onSelect={openLogs}
+            onSelectNode={setSelectedNode}
           />
         )}
       </div>
 
+      <NodePodsSheet
+        context={context}
+        node={selectedNode}
+        onClose={() => setSelectedNode(null)}
+        onSelectPod={(ns, name) => setSelectedPod({ namespace: ns, name })}
+      />
+
       <LogSheet
         context={context}
-        namespace={namespace}
-        pod={selectedPod}
+        namespace={selectedPod?.namespace ?? ''}
+        pod={selectedPod?.name ?? null}
         onClose={() => setSelectedPod(null)}
       />
     </div>
@@ -229,6 +241,7 @@ function ResourceArea({
   items,
   metrics,
   onSelect,
+  onSelectNode,
 }: {
   kind: WorkloadKind
   status: LiveStatus
@@ -238,6 +251,7 @@ function ResourceArea({
   items: ResourceItem[]
   metrics: Map<string, PodMetricsInfo>
   onSelect: (name: string) => void
+  onSelectNode: (node: string) => void
 }) {
   if (status === 'error') {
     return <StreamError kind={kind} error={error} clusterScoped={clusterScoped} />
@@ -246,7 +260,7 @@ function ResourceArea({
   return (
     <div className={`relative ${loaded ? '' : 'min-h-[60vh]'}`}>
       <LoadingField active={!loaded} />
-      {loaded && renderResource(kind, items, metrics, onSelect)}
+      {loaded && renderResource(kind, items, metrics, onSelect, onSelectNode)}
     </div>
   )
 }
@@ -256,6 +270,7 @@ function renderResource(
   items: ResourceItem[],
   metrics: Map<string, PodMetricsInfo>,
   onSelect: (name: string) => void,
+  onSelectNode: (node: string) => void,
 ) {
   switch (kind) {
     case 'Pods':
@@ -265,7 +280,7 @@ function renderResource(
     case 'CronJobs':
       return <CronJobTable cronJobs={items as CronJobInfo[]} />
     case 'Nodes':
-      return <NodeTable nodes={items as NodeInfo[]} />
+      return <NodeTable nodes={items as NodeInfo[]} onSelect={onSelectNode} />
     default:
       return (
         <WorkloadTable kindLabel={kind} workloads={items as WorkloadInfo[]} onSelect={onSelect} />
