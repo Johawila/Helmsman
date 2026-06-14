@@ -1,6 +1,7 @@
-import { Box, Briefcase, Clock, Database, Layers, Server } from 'lucide-react'
+import { Box, Briefcase, Clock, Database, LayoutDashboard, Layers, Server } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import CronJobTable from '@/components/CronJobTable'
+import DashboardView from '@/components/DashboardView'
 import JobTable from '@/components/JobTable'
 import LogSheet from '@/components/LogSheet'
 import PodTable from '@/components/PodTable'
@@ -26,10 +27,23 @@ import {
 import { useLiveResource, type LiveStatus } from '@/lib/useLiveResource'
 import { usePodMetrics } from '@/lib/usePodMetrics'
 
-type ResourceKind = 'Pods' | 'Deployments' | 'StatefulSets' | 'DaemonSets' | 'Jobs' | 'CronJobs'
+type ResourceKind =
+  | 'Dashboard'
+  | 'Pods'
+  | 'Deployments'
+  | 'StatefulSets'
+  | 'DaemonSets'
+  | 'Jobs'
+  | 'CronJobs'
 type ResourceItem = PodInfo | WorkloadInfo | JobInfo | CronJobInfo
 
-const KINDS: (SidebarKind & { value: ResourceKind; method: string })[] = [
+const DASHBOARD_KIND: SidebarKind & { value: ResourceKind; method: string } = {
+  value: 'Dashboard',
+  method: '',
+  icon: LayoutDashboard,
+}
+
+const WORKLOAD_KINDS: (SidebarKind & { value: ResourceKind; method: string })[] = [
   { value: 'Pods', method: 'StreamPods', icon: Box },
   { value: 'Deployments', method: 'StreamDeployments', icon: Layers },
   { value: 'StatefulSets', method: 'StreamStatefulSets', icon: Database },
@@ -46,13 +60,18 @@ interface ClusterViewProps {
 export default function ClusterView({ context, defaultNamespace }: ClusterViewProps) {
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [namespace, setNamespace] = useState<string>('')
-  const [kind, setKind] = useState<ResourceKind>('Pods')
+  const [kind, setKind] = useState<ResourceKind>('Dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const [nsError, setNsError] = useState<string | null>(null)
   const [selectedPod, setSelectedPod] = useState<string | null>(null)
 
-  const method = KINDS.find((k) => k.value === kind)!.method
-  const { items, status, loaded } = useLiveResource<ResourceItem>(method, context, namespace)
+  const method = WORKLOAD_KINDS.find((k) => k.value === kind)?.method ?? ''
+  // Skip streaming on the dashboard — DashboardView manages its own streams.
+  const { items, status, loaded } = useLiveResource<ResourceItem>(
+    method,
+    context,
+    kind === 'Dashboard' ? '' : namespace,
+  )
   const metrics = usePodMetrics(context, kind === 'Pods' ? namespace : '')
 
   useEffect(() => {
@@ -79,7 +98,8 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   return (
     <div className="flex h-full">
       <ResourceSidebar
-        kinds={KINDS}
+        dashboard={DASHBOARD_KIND}
+        workloads={WORKLOAD_KINDS}
         active={kind}
         onSelect={(v) => setKind(v as ResourceKind)}
         collapsed={collapsed}
@@ -101,8 +121,8 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             </SelectContent>
           </Select>
 
-          {namespace && <LiveBadge status={status} />}
-          {namespace && loaded && (
+          {namespace && kind !== 'Dashboard' && <LiveBadge status={status} />}
+          {namespace && kind !== 'Dashboard' && loaded && (
             <span className="text-sm text-muted-foreground">
               {items.length} {kind.toLowerCase()}
             </span>
@@ -110,9 +130,12 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
         </div>
 
         {nsError && <p className="font-mono text-destructive">{nsError}</p>}
-        {namespace && !nsError && (
+        {namespace && !nsError && kind === 'Dashboard' && (
+          <DashboardView context={context} namespace={namespace} />
+        )}
+        {namespace && !nsError && kind !== 'Dashboard' && (
           <ResourceArea
-            kind={kind}
+            kind={kind as WorkloadKind}
             status={status}
             loaded={loaded}
             items={items}
@@ -132,6 +155,8 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   )
 }
 
+type WorkloadKind = Exclude<ResourceKind, 'Dashboard'>
+
 function ResourceArea({
   kind,
   status,
@@ -140,7 +165,7 @@ function ResourceArea({
   metrics,
   onSelect,
 }: {
-  kind: ResourceKind
+  kind: WorkloadKind
   status: LiveStatus
   loaded: boolean
   items: ResourceItem[]

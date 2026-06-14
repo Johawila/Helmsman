@@ -7,7 +7,8 @@ export interface SidebarKind {
 }
 
 interface ResourceSidebarProps {
-  kinds: SidebarKind[]
+  dashboard: SidebarKind
+  workloads: SidebarKind[]
   active: string
   onSelect: (value: string) => void
   collapsed: boolean
@@ -15,7 +16,8 @@ interface ResourceSidebarProps {
 }
 
 export default function ResourceSidebar({
-  kinds,
+  dashboard,
+  workloads,
   active,
   onSelect,
   collapsed,
@@ -36,36 +38,58 @@ export default function ResourceSidebar({
         {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
       </button>
 
+      {/* Dashboard entry */}
+      <div className="px-2">
+        <KindButton kind={dashboard} active={active} onSelect={onSelect} collapsed={collapsed} />
+      </div>
+
+      {/* Divider */}
+      <div className="my-1 border-t" />
+
+      {/* Workloads group */}
       {!collapsed && (
         <div className="px-3 pb-1 text-xs font-medium tracking-wider text-muted-foreground uppercase">
           Workloads
         </div>
       )}
-
       <ul className="flex flex-col gap-0.5 px-2">
-        {kinds.map((kind) => {
-          const Icon = kind.icon
-          const isActive = kind.value === active
-          return (
-            <li key={kind.value}>
-              <button
-                onClick={() => onSelect(kind.value)}
-                title={kind.value}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors',
-                  isActive
-                    ? 'bg-accent font-medium text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                  collapsed && 'justify-center',
-                )}
-              >
-                <Icon className="size-4 shrink-0" />
-                {!collapsed && <span>{kind.value}</span>}
-              </button>
-            </li>
-          )
-        })}
+        {workloads.map((kind) => (
+          <li key={kind.value}>
+            <KindButton kind={kind} active={active} onSelect={onSelect} collapsed={collapsed} />
+          </li>
+        ))}
       </ul>
     </nav>
+  )
+}
+
+function KindButton({
+  kind,
+  active,
+  onSelect,
+  collapsed,
+}: {
+  kind: SidebarKind
+  active: string
+  onSelect: (value: string) => void
+  collapsed: boolean
+}) {
+  const Icon = kind.icon
+  const isActive = kind.value === active
+  return (
+    <button
+      onClick={() => onSelect(kind.value)}
+      title={kind.value}
+      className={cn(
+        'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors',
+        isActive
+          ? 'bg-accent font-medium text-accent-foreground'
+          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+        collapsed && 'justify-center',
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      {!collapsed && <span>{kind.value}</span>}
+    </button>
   )
 }
