@@ -7,7 +7,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { PodInfo, PodMetricsInfo } from '@/lib/api'
-import { formatAge } from '@/lib/kube'
+import { formatAge, podStatus } from '@/lib/kube'
 
 interface PodTableProps {
   pods: PodInfo[]
@@ -36,6 +36,7 @@ export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) 
       <TableBody>
         {pods.map((pod) => {
           const metric = metrics.get(pod.name)
+          const status = podStatus(pod)
           return (
             <TableRow key={pod.name}>
               <TableCell>
@@ -50,9 +51,9 @@ export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) 
               <TableCell>
                 <span className="flex items-center gap-2">
                   <span
-                    className={`size-2 rounded-full ${statusDot(pod.status)} ${pod.status === 'Running' ? 'animate-pulse' : ''}`}
+                    className={`size-2 rounded-full ${statusDot(status)} ${status === 'Running' ? 'animate-pulse' : ''}`}
                   />
-                  {pod.status}
+                  {status}
                 </span>
               </TableCell>
               <TableCell className="text-right font-mono">

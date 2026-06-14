@@ -14,6 +14,12 @@ export function parseContext(name: string): ParsedContext {
   return { label: name, region: null }
 }
 
+// Pod display status, falling back to raw phase if the API hasn't sent a derived status
+// (e.g. an older backend build). Keeps the UI sane instead of marking every pod broken.
+export function podStatus(pod: { status?: string; phase: string }): string {
+  return pod.status || pod.phase
+}
+
 // Compact age like kubectl: 45s, 12m, 5h, 3d.
 export function formatAge(isoTimestamp: string | null): string {
   if (!isoTimestamp) {

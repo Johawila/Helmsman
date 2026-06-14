@@ -3,7 +3,7 @@ import LoadingField from '@/components/LoadingField'
 import Sparkline from '@/components/Sparkline'
 import { useLiveResource } from '@/lib/useLiveResource'
 import { useMetricsHistory } from '@/lib/useMetricsHistory'
-import { formatAge } from '@/lib/kube'
+import { formatAge, podStatus } from '@/lib/kube'
 import type { CronJobInfo, EventInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from '@/lib/api'
 
 // Events carry no meaningful name order; show the most recently seen first.
@@ -373,7 +373,8 @@ function last(arr: number[]): number {
 }
 
 function isHealthyPod(p: PodInfo): boolean {
-  return p.status === 'Running' || p.status === 'Completed'
+  const status = podStatus(p)
+  return status === 'Running' || status === 'Completed' || status === 'Succeeded'
 }
 
 // Statuses that are usually transient (mid-rollout/startup) — surfaced as warnings, not errors.
@@ -396,11 +397,12 @@ function collectProblems(
 
   for (const p of pods) {
     if (!isHealthyPod(p)) {
+      const status = podStatus(p)
       problems.push({
         kind: 'Pod',
         name: p.name,
-        reason: p.status,
-        severity: isTransientStatus(p.status) ? 'warning' : 'error',
+        reason: status,
+        severity: isTransientStatus(status) ? 'warning' : 'error',
       })
     } else if (p.restarts >= 5) {
       problems.push({

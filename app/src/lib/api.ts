@@ -9,7 +9,8 @@ export interface PodInfo {
   name: string
   phase: string
   // Derived kubectl-style status (CrashLoopBackOff, OOMKilled, Completed, …); drives health.
-  status: string
+  // Optional so an older backend without this field degrades to `phase` rather than breaking.
+  status?: string
   readyContainers: number
   totalContainers: number
   restarts: number
