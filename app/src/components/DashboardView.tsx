@@ -210,7 +210,7 @@ function ConsumerList({
             onClick={() => onSelect(item.name)}
             className="flex w-full items-center justify-between gap-3 rounded px-1 py-0.5 text-xs hover:bg-accent/50"
           >
-            <span className="min-w-0 truncate font-mono text-foreground/80">{item.name}</span>
+            <span className="min-w-0 truncate font-mono text-foreground/80 hover:text-primary hover:underline">{item.name}</span>
             <span className="shrink-0 tabular-nums text-muted-foreground">{item.value}</span>
           </button>
         ))}
