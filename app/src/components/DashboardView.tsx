@@ -1,7 +1,8 @@
 import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
 import LoadingField from '@/components/LoadingField'
+import Sparkline from '@/components/Sparkline'
 import { useLiveResource } from '@/lib/useLiveResource'
-import { usePodMetrics } from '@/lib/usePodMetrics'
+import { useMetricsHistory } from '@/lib/useMetricsHistory'
 import type { CronJobInfo, JobInfo, PodInfo, PodMetricsInfo, WorkloadInfo } from '@/lib/api'
 
 // Maps the short kind name used in problems to the ResourceKind value used by the sidebar.
@@ -27,7 +28,7 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
   const daemonSets = useLiveResource<WorkloadInfo>('StreamDaemonSets', context, namespace)
   const jobs = useLiveResource<JobInfo>('StreamJobs', context, namespace)
   const cronJobs = useLiveResource<CronJobInfo>('StreamCronJobs', context, namespace)
-  const metrics = usePodMetrics(context, namespace)
+  const { current: metrics, series, totalCpu, totalMem } = useMetricsHistory(context, namespace)
 
   const problems = collectProblems(
     pods.items,
@@ -105,6 +106,29 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
         </div>
       </section>
 
+      {/* Cluster load */}
+      {totalCpu.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">
+            Cluster load
+          </h2>
+          <div className="grid max-w-xl grid-cols-2 gap-3">
+            <TotalCard
+              label="Total CPU"
+              value={`${last(totalCpu)}m`}
+              data={totalCpu}
+              color="text-blue-400"
+            />
+            <TotalCard
+              label="Total memory"
+              value={`${last(totalMem)} Mi`}
+              data={totalMem}
+              color="text-purple-400"
+            />
+          </div>
+        </section>
+      )}
+
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {/* Problems */}
         <section className="xl:col-span-2">
@@ -134,12 +158,22 @@ export default function DashboardView({ context, namespace, onSelectPod, onNavig
             <div className="space-y-4">
               <ConsumerList
                 label="CPU"
-                items={topCpu.map((m) => ({ name: m.name, value: `${m.cpuMillicores}m` }))}
+                color="text-blue-400"
+                items={topCpu.map((m) => ({
+                  name: m.name,
+                  value: `${m.cpuMillicores}m`,
+                  series: series.get(m.name)?.cpu ?? [],
+                }))}
                 onSelect={onSelectPod}
               />
               <ConsumerList
                 label="Memory"
-                items={topMem.map((m) => ({ name: m.name, value: `${m.memoryMi} Mi` }))}
+                color="text-purple-400"
+                items={topMem.map((m) => ({
+                  name: m.name,
+                  value: `${m.memoryMi} Mi`,
+                  series: series.get(m.name)?.mem ?? [],
+                }))}
                 onSelect={onSelectPod}
               />
             </div>
@@ -217,11 +251,13 @@ function ProblemRow({ problem, onNavigate }: { problem: Problem; onNavigate: () 
 
 function ConsumerList({
   label,
+  color,
   items,
   onSelect,
 }: {
   label: string
-  items: { name: string; value: string }[]
+  color: string
+  items: { name: string; value: string; series: number[] }[]
   onSelect: (name: string) => void
 }) {
   return (
@@ -232,10 +268,15 @@ function ConsumerList({
           <button
             key={item.name}
             onClick={() => onSelect(item.name)}
-            className="flex w-full items-center justify-between gap-3 rounded px-1 py-0.5 text-xs hover:bg-accent/50"
+            className="flex w-full items-center gap-3 rounded px-1 py-0.5 text-xs hover:bg-accent/50"
           >
-            <span className="min-w-0 truncate font-mono text-foreground/80 hover:text-primary hover:underline">{item.name}</span>
-            <span className="shrink-0 tabular-nums text-muted-foreground">{item.value}</span>
+            <span className="min-w-0 flex-1 truncate text-left font-mono text-foreground/80 hover:text-primary hover:underline">
+              {item.name}
+            </span>
+            <Sparkline data={item.series} width={48} height={14} className={`shrink-0 ${color}`} />
+            <span className="w-16 shrink-0 text-right tabular-nums text-muted-foreground">
+              {item.value}
+            </span>
           </button>
         ))}
       </div>
@@ -243,7 +284,33 @@ function ConsumerList({
   )
 }
 
+function TotalCard({
+  label,
+  value,
+  data,
+  color,
+}: {
+  label: string
+  value: string
+  data: number[]
+  color: string
+}) {
+  return (
+    <div className="rounded-lg border bg-card/30 p-3">
+      <div className="mb-1 text-xs text-muted-foreground">{label}</div>
+      <div className="flex items-end justify-between gap-3">
+        <div className="text-xl font-semibold tabular-nums">{value}</div>
+        <Sparkline data={data} width={120} height={32} className={color} />
+      </div>
+    </div>
+  )
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function last(arr: number[]): number {
+  return arr[arr.length - 1] ?? 0
+}
 
 function isHealthyPod(p: PodInfo): boolean {
   return p.phase === 'Running' || p.phase === 'Succeeded'
