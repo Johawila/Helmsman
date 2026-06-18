@@ -1,4 +1,7 @@
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
 using Helmsman.Api.Models;
 using k8s;
 using k8s.Autorest;
@@ -79,6 +82,96 @@ public class ClusterReader
             .ThenBy(p => p.Name, StringComparer.Ordinal)
             .ToList();
     }
+
+    /// <summary>
+    /// Installed Helm releases in a namespace, decoded from their <c>helm.sh/release.v1</c> Secrets.
+    /// Helm stores each revision as a secret holding base64(gzip(json)); we keep the highest revision
+    /// per release and read only chart metadata — never the release's values or rendered manifest,
+    /// which can contain secrets. Latest-version enrichment happens outside (Artifact Hub).
+    /// </summary>
+    public async Task<IReadOnlyList<HelmReleaseInfo>> ListHelmReleasesAsync(
+        string context,
+        string @namespace,
+        CancellationToken ct
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(@namespace);
+
+        using IKubernetes client = _factory.CreateClient(context);
+        V1SecretList secrets = await client.CoreV1.ListNamespacedSecretAsync(
+            @namespace,
+            fieldSelector: "type=helm.sh/release.v1",
+            cancellationToken: ct
+        );
+
+        // Keep only the highest revision per release name.
+        Dictionary<string, HelmReleaseInfo> latest = new(StringComparer.Ordinal);
+        foreach (V1Secret secret in secrets.Items)
+        {
+            HelmReleaseInfo? release = DecodeHelmRelease(secret);
+            if (release is null)
+            {
+                continue;
+            }
+            if (!latest.TryGetValue(release.Name, out HelmReleaseInfo? existing)
+                || release.Revision > existing.Revision)
+            {
+                latest[release.Name] = release;
+            }
+        }
+
+        return latest.Values.OrderBy(r => r.Name, StringComparer.Ordinal).ToList();
+    }
+
+    private static HelmReleaseInfo? DecodeHelmRelease(V1Secret secret)
+    {
+        if (secret.Data is null || !secret.Data.TryGetValue("release", out byte[]? payload))
+        {
+            return null;
+        }
+
+        try
+        {
+            // Secret data is already base64-decoded by the client; the value is base64(gzip(json)).
+            byte[] gzipped = Convert.FromBase64String(Encoding.UTF8.GetString(payload));
+            using var input = new MemoryStream(gzipped);
+            using var gzip = new GZipStream(input, CompressionMode.Decompress);
+            using var json = new MemoryStream();
+            gzip.CopyTo(json);
+
+            using JsonDocument doc = JsonDocument.Parse(json.ToArray());
+            JsonElement root = doc.RootElement;
+
+            // Only metadata is read here — config (values) and manifest are deliberately ignored.
+            JsonElement meta = root.GetProperty("chart").GetProperty("metadata");
+            JsonElement info = root.GetProperty("info");
+
+            return new HelmReleaseInfo
+            {
+                Name = Str(root, "name"),
+                Namespace = Str(root, "namespace"),
+                Revision = root.TryGetProperty("version", out JsonElement v) ? v.GetInt32() : 0,
+                Chart = Str(meta, "name"),
+                ChartVersion = Str(meta, "version"),
+                AppVersion = Str(meta, "appVersion"),
+                Status = Str(info, "status"),
+                Updated = DateTimeOffset.TryParse(Str(info, "last_deployed"), out DateTimeOffset ts)
+                    ? ts
+                    : null,
+            };
+        }
+        catch
+        {
+            // A malformed/foreign secret shouldn't break the listing.
+            return null;
+        }
+    }
+
+    private static string Str(JsonElement element, string property) =>
+        element.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? ""
+            : "";
 
     /// <summary>
     /// Current CPU/memory usage per pod from metrics-server (metrics.k8s.io). Polled, not watched —

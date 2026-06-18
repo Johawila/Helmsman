@@ -99,6 +99,28 @@ export async function fetchNodePods(context: string, node: string): Promise<PodI
   return getJson(`/api/node-pods?${q}`)
 }
 
+export interface HelmReleaseInfo {
+  name: string
+  namespace: string
+  chart: string
+  chartVersion: string
+  appVersion: string
+  revision: number
+  status: string
+  updated: string | null
+  latestVersion: string | null
+  updateAvailable: boolean
+}
+
+// Installed Helm releases in a namespace (latestVersion is best-effort via Artifact Hub).
+export async function fetchHelmReleases(
+  context: string,
+  namespace: string,
+): Promise<HelmReleaseInfo[]> {
+  const q = new URLSearchParams({ context, namespace })
+  return getJson(`/api/helm-releases?${q}`)
+}
+
 export interface ConditionInfo {
   type: string
   status: string

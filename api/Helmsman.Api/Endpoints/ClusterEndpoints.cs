@@ -1,3 +1,4 @@
+using Helmsman.Api.Charts;
 using Helmsman.Api.Kube;
 
 namespace Helmsman.Api.Endpoints;
@@ -85,6 +86,43 @@ public static class ClusterEndpoints
             try
             {
                 return Results.Ok(await reader.ListPodsOnNodeAsync(context, node, ct));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        // Installed Helm releases in a namespace, with a best-effort Artifact Hub "latest version".
+        app.MapGet("/api/helm-releases", async (string? context, string? @namespace, ClusterReader reader, ArtifactHubClient hub, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(context))
+            {
+                return Results.BadRequest("A 'context' query parameter is required.");
+            }
+            if (string.IsNullOrWhiteSpace(@namespace))
+            {
+                return Results.BadRequest("A 'namespace' query parameter is required.");
+            }
+
+            try
+            {
+                var releases = await reader.ListHelmReleasesAsync(context, @namespace, ct);
+
+                // One Artifact Hub lookup per distinct chart, run concurrently.
+                var charts = releases.Select(r => r.Chart).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var lookups = await Task.WhenAll(charts.Select(async chart =>
+                    (chart, latest: await hub.GetLatestVersionAsync(chart, ct))));
+                var latestByChart = lookups.ToDictionary(x => x.chart, x => x.latest, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var release in releases)
+                {
+                    string? latest = latestByChart.GetValueOrDefault(release.Chart);
+                    release.LatestVersion = latest;
+                    release.UpdateAvailable = ChartVersion.IsNewer(release.ChartVersion, latest);
+                }
+
+                return Results.Ok(releases);
             }
             catch (ArgumentException ex)
             {

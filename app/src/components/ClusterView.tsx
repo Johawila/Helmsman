@@ -1,8 +1,9 @@
-import { Box, Briefcase, Clock, Cpu, Database, LayoutDashboard, Layers, Pin, Server } from 'lucide-react'
+import { Box, Briefcase, Clock, Cpu, Database, LayoutDashboard, Layers, Package, Pin, Server } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import CronJobTable from '@/components/CronJobTable'
 import DashboardView from '@/components/DashboardView'
 import DetailSheet, { type DetailTarget } from '@/components/DetailSheet'
+import HelmReleasesView from '@/components/HelmReleasesView'
 import JobTable from '@/components/JobTable'
 import LoadingField from '@/components/LoadingField'
 import LogSheet from '@/components/LogSheet'
@@ -41,10 +42,14 @@ type ResourceKind =
   | 'Jobs'
   | 'CronJobs'
   | 'Nodes'
+  | 'Helm'
 type ResourceItem = PodInfo | WorkloadInfo | JobInfo | CronJobInfo | NodeInfo
 
 // Cluster-scoped kinds don't need a namespace; the stream runs against the whole cluster.
 const CLUSTER_SCOPED: ResourceKind[] = ['Nodes']
+
+// Kinds that manage their own data (not the live-watch stream): the dashboard and Helm (polled REST).
+const SELF_MANAGED: ResourceKind[] = ['Dashboard', 'Helm']
 
 const DASHBOARD_KIND: SidebarKind & { value: ResourceKind; method: string } = {
   value: 'Dashboard',
@@ -65,6 +70,11 @@ const CLUSTER_KINDS: (SidebarKind & { value: ResourceKind; method: string })[] =
   { value: 'Nodes', method: 'StreamNodes', icon: Cpu },
 ]
 
+const PACKAGE_KINDS: (SidebarKind & { value: ResourceKind; method: string })[] = [
+  { value: 'Helm', method: '', icon: Package },
+]
+
+// Streamed kinds only — used to resolve a stream method. Self-managed kinds aren't here.
 const ALL_KINDS = [...WORKLOAD_KINDS, ...CLUSTER_KINDS]
 
 interface ClusterViewProps {
@@ -85,10 +95,11 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   const [defaultNs, setDefaultNs] = useState<string | null>(null)
 
   const clusterScoped = CLUSTER_SCOPED.includes(kind)
+  const selfManaged = SELF_MANAGED.includes(kind)
   const method = ALL_KINDS.find((k) => k.value === kind)?.method ?? ''
-  // Dashboard manages its own streams; cluster-scoped kinds stream regardless of namespace
-  // (a constant placeholder keeps useLiveResource active — the server ignores it).
-  const streamNamespace = kind === 'Dashboard' ? '' : clusterScoped ? 'cluster' : namespace
+  // Self-managed kinds (Dashboard, Helm) fetch their own data; cluster-scoped kinds stream
+  // regardless of namespace (a constant placeholder keeps useLiveResource active — server ignores it).
+  const streamNamespace = selfManaged ? '' : clusterScoped ? 'cluster' : namespace
   const { items, status, loaded, error } = useLiveResource<ResourceItem>(
     method,
     context,
@@ -96,9 +107,9 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   )
   const metrics = usePodMetrics(context, kind === 'Pods' ? namespace : '')
 
-  // A resource table is shown for any non-dashboard kind once it has something to stream:
+  // A live-watch table is shown for any streamed kind once it has something to stream:
   // cluster-scoped kinds always, namespaced kinds once a namespace is selected.
-  const streaming = kind !== 'Dashboard' && (clusterScoped || !!namespace)
+  const streaming = !selfManaged && (clusterScoped || !!namespace)
 
   useEffect(() => {
     const pinned = getDefaultNamespace(context)
@@ -143,6 +154,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
         dashboard={DASHBOARD_KIND}
         workloads={WORKLOAD_KINDS}
         cluster={CLUSTER_KINDS}
+        packages={PACKAGE_KINDS}
         active={kind}
         onSelect={(v) => setKind(v as ResourceKind)}
         collapsed={collapsed}
@@ -201,6 +213,9 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             onSelectPod={(name) => setSelectedPod({ namespace, name })}
             onNavigate={(k) => setKind(k as ResourceKind)}
           />
+        )}
+        {namespace && !nsError && kind === 'Helm' && (
+          <HelmReleasesView context={context} namespace={namespace} />
         )}
         {streaming && (
           <ResourceArea
