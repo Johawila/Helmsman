@@ -1,18 +1,38 @@
 # ⎈ Helmsman
 
 A graphical web UI over Kubernetes — a nicer, browser-based take on [k9s](https://k9scli.io/).
-Browse your clusters, watch pods, stream live logs, and read CPU / memory and scaling
-info, all from your existing `kubeconfig`.
+Browse your clusters, watch workloads live, stream logs, see CPU / memory, and get an
+at-a-glance health dashboard — all from your existing `kubeconfig`.
 
-> **Read-only by design.** v1 only ever issues reads (GET / watch) against a cluster.
+> **Read-only by design.** Helmsman only ever issues reads (GET / watch) against a cluster.
 > No create, update, delete, scale, exec or apply. See [Safety model](#safety-model).
+
+## Features
+
+- **Health dashboard** — per-namespace overview: workload health cards, a Problems panel
+  (degraded pods, failed jobs, crash loops), top CPU / memory consumers with live sparklines,
+  and a stream of recent **Warning events**. Cards and problems are clickable.
+- **Resource navigator** — a collapsible sidebar to switch between Pods, Deployments,
+  StatefulSets, DaemonSets, Jobs, CronJobs, and Nodes.
+- **Live everything** — resources update in real time via Kubernetes **watch** over SignalR
+  (incremental add/modify/delete), not interval polling.
+- **Log streaming** — click a pod (or a workload — it resolves to a backing pod) to follow its
+  logs live, with JSON/Serilog pretty-printing.
+- **CPU / memory** — per-pod usage from metrics-server, plus short in-memory history sparklines.
+- **Smart pod status** — kubectl-style derived status (CrashLoopBackOff, OOMKilled,
+  ImagePullBackOff, Terminating, Completed, …), not just the raw phase.
+- **Node drill-down** — click a node to see the pods scheduled on it, then jump to their logs.
+- **Detail drawer** — the ⓘ on a row opens a read-only "describe": conditions, container images,
+  labels, and the events recorded against that object.
+- **Pinnable default namespace** — pin your usual namespace per context; it's auto-selected next
+  time.
 
 ## Components
 
 | Component | Path | Stack |
 |---|---|---|
-| **API** | `/api` | .NET 10 — single project, minimal-API endpoints + Kubernetes access |
-| **App** | `/app` | React + TypeScript + Vite |
+| **API** | `/api` | .NET 10 — single project, minimal-API endpoints + SignalR + Kubernetes access |
+| **App** | `/app` | React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui |
 
 ## Quick start
 
@@ -20,8 +40,8 @@ Two processes — the API and the Vite dev server. The app proxies `/api` and `/
 the API, so you only ever open the app URL.
 
 ```bash
-# 1. API  →  http://localhost:5206
-dotnet run --project api/Helmsman.Api
+# 1. API  →  http://localhost:5206   (use `watch` so new endpoints/hubs reload automatically)
+dotnet watch --project api/Helmsman.Api
 
 # 2. App  →  http://localhost:5174   (open this one)
 npm --prefix app run dev -- --port 5174
@@ -29,7 +49,8 @@ npm --prefix app run dev -- --port 5174
 
 The landing screen lists every context in your `kubeconfig` and marks the one `kubectl` is
 currently pointed at. Helmsman reads the kubeconfig directly — there is **no separate login
-or credential config**; it inherits whatever your `kubectl` already uses.
+or credential config**; it inherits whatever your `kubectl` already uses (including
+`aws eks get-token` exec auth for EKS).
 
 ### Prerequisites
 
@@ -38,7 +59,9 @@ or credential config**; it inherits whatever your `kubectl` already uses.
 - A reachable cluster in your `~/.kube/config` (`kubectl get ns` should work)
 - **For CPU / memory:** [metrics-server](https://github.com/kubernetes-sigs/metrics-server)
   installed in the cluster. Confirm with `kubectl top pods` — if that errors, the metrics
-  panels will be empty until it's installed.
+  panels stay empty until it's installed.
+- **For Nodes:** your context needs cluster-scoped `list/watch nodes` RBAC. Without it, the
+  Nodes view shows a clear permission message (everything else is namespace-scoped).
 
 ## Project structure
 
@@ -48,11 +71,11 @@ Helmsman/
   api/
     Helmsman.Api/                single project, folders by concern:
       Endpoints/                   minimal-API routes (ClusterEndpoints.cs)
-      Kube/                        Kubernetes access (KubeClientFactory.cs); owns KubernetesClient
-      Models/                      plain DTO classes (ContextInfo.cs)
-      Hubs/                        SignalR hubs for live logs (later)
+      Kube/                        Kubernetes access (KubeClientFactory, ClusterReader); owns KubernetesClient
+      Models/                      plain DTO classes (PodInfo, WorkloadInfo, NodeInfo, …)
+      Hubs/                        SignalR hubs (ResourcesHub, LogsHub) for live streams
   app/
-    src/lib/                     API client (api.ts), helpers
+    src/lib/                     API client (api.ts), helpers, live-stream hooks
     src/components/              UI (+ ui/ shadcn primitives)
   docs/                          architecture notes + ADRs
 ```
@@ -80,20 +103,14 @@ This tool talks to real clusters, so the safety properties are deliberate, not i
 > ⚠️ **Two honest caveats.** Read-only is enforced by *convention*, not by the cluster — your
 > kubeconfig credentials may have write/admin rights, so cluster **RBAC** is the real backstop;
 > prefer a read-only role. And *reads are not zero-impact*: log streaming and metrics polling
-> load the API server, and real-cluster logs may contain sensitive data (PII). **Develop against
-> a non-production cluster.**
+> load the API server, and real-cluster logs and events may contain sensitive data (PII).
+> **Develop against a non-production cluster.**
 
-## Status & roadmap
+## Contributing
 
-| Feature | Status |
-|---|---|
-| Context list (k9s-style) from kubeconfig | ✅ Done |
-| Namespace picker | ✅ Done |
-| **Live** pod list (watch → SignalR, incremental deltas) | ✅ Done |
-| Live log streaming (click a pod → follow over SignalR) | ✅ Done |
-| CPU / memory columns (metrics.k8s.io, polled) | ✅ Done |
-| Deployments / HPA with replica counts | ⏳ Next |
+Changes to `main` go through a pull request that needs an approving review. (Repo admins can
+bypass for direct merges.) Keep the read-only invariant intact — no mutating Kubernetes calls.
 
 ## License
 
-Personal project — no license granted.
+Personal project — no license is granted. The source is public to read; all rights reserved.
