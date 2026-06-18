@@ -1,2 +1,3 @@
-# Johan owns the whole repo — his review is required on PRs to protected branches.
-* @Johawila
+# Johan and Jack own the whole repo — a review from one of them is required on PRs
+# to protected branches. Both are repo admins, so both can bypass and merge directly.
+* @Johawila @Jack-Pettersson
