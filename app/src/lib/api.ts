@@ -99,6 +99,36 @@ export async function fetchNodePods(context: string, node: string): Promise<PodI
   return getJson(`/api/node-pods?${q}`)
 }
 
+export interface ConditionInfo {
+  type: string
+  status: string
+  reason: string
+  message: string
+  lastTransition: string | null
+}
+
+export interface ResourceDetail {
+  kind: string
+  name: string
+  namespace: string
+  labels: Record<string, string>
+  conditions: ConditionInfo[]
+  images: string[]
+  createdAt: string | null
+  events: EventInfo[]
+}
+
+// Read-only describe of a single resource.
+export async function fetchDescribe(
+  context: string,
+  namespace: string,
+  kind: string,
+  name: string,
+): Promise<ResourceDetail> {
+  const q = new URLSearchParams({ context, namespace, kind, name })
+  return getJson(`/api/describe?${q}`)
+}
+
 // Resolves a workload to one of its pods (for log streaming). Returns null when the kind has no
 // pod selector (CronJobs) or no pods are running.
 export async function resolvePod(

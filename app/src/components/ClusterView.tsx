@@ -2,6 +2,7 @@ import { Box, Briefcase, Clock, Cpu, Database, LayoutDashboard, Layers, Pin, Ser
 import { useEffect, useState } from 'react'
 import CronJobTable from '@/components/CronJobTable'
 import DashboardView from '@/components/DashboardView'
+import DetailSheet, { type DetailTarget } from '@/components/DetailSheet'
 import JobTable from '@/components/JobTable'
 import LoadingField from '@/components/LoadingField'
 import LogSheet from '@/components/LogSheet'
@@ -80,6 +81,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
   // A selected pod carries its namespace, since pods reached via a node span namespaces.
   const [selectedPod, setSelectedPod] = useState<{ namespace: string; name: string } | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [selectedDetail, setSelectedDetail] = useState<DetailTarget | null>(null)
   const [defaultNs, setDefaultNs] = useState<string | null>(null)
 
   const clusterScoped = CLUSTER_SCOPED.includes(kind)
@@ -120,6 +122,8 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
       setDefaultNs(namespace)
     }
   }
+
+  const openDetails = (name: string) => setSelectedDetail({ kind, namespace, name })
 
   // Logs always come from a pod: pods open directly; workloads resolve to one of their pods.
   // These come from a namespaced view, so they use the currently-selected namespace.
@@ -209,6 +213,7 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
             metrics={metrics}
             onSelect={openLogs}
             onSelectNode={setSelectedNode}
+            onDetails={openDetails}
           />
         )}
       </div>
@@ -226,6 +231,12 @@ export default function ClusterView({ context, defaultNamespace }: ClusterViewPr
         pod={selectedPod?.name ?? null}
         onClose={() => setSelectedPod(null)}
       />
+
+      <DetailSheet
+        context={context}
+        target={selectedDetail}
+        onClose={() => setSelectedDetail(null)}
+      />
     </div>
   )
 }
@@ -242,6 +253,7 @@ function ResourceArea({
   metrics,
   onSelect,
   onSelectNode,
+  onDetails,
 }: {
   kind: WorkloadKind
   status: LiveStatus
@@ -252,6 +264,7 @@ function ResourceArea({
   metrics: Map<string, PodMetricsInfo>
   onSelect: (name: string) => void
   onSelectNode: (node: string) => void
+  onDetails: (name: string) => void
 }) {
   if (status === 'error') {
     return <StreamError kind={kind} error={error} clusterScoped={clusterScoped} />
@@ -260,7 +273,7 @@ function ResourceArea({
   return (
     <div className={`relative ${loaded ? '' : 'min-h-[60vh]'}`}>
       <LoadingField active={!loaded} />
-      {loaded && renderResource(kind, items, metrics, onSelect, onSelectNode)}
+      {loaded && renderResource(kind, items, metrics, onSelect, onSelectNode, onDetails)}
     </div>
   )
 }
@@ -271,10 +284,18 @@ function renderResource(
   metrics: Map<string, PodMetricsInfo>,
   onSelect: (name: string) => void,
   onSelectNode: (node: string) => void,
+  onDetails: (name: string) => void,
 ) {
   switch (kind) {
     case 'Pods':
-      return <PodTable pods={items as PodInfo[]} metrics={metrics} onSelectPod={onSelect} />
+      return (
+        <PodTable
+          pods={items as PodInfo[]}
+          metrics={metrics}
+          onSelectPod={onSelect}
+          onDetails={onDetails}
+        />
+      )
     case 'Jobs':
       return <JobTable jobs={items as JobInfo[]} onSelect={onSelect} />
     case 'CronJobs':
@@ -283,7 +304,12 @@ function renderResource(
       return <NodeTable nodes={items as NodeInfo[]} onSelect={onSelectNode} />
     default:
       return (
-        <WorkloadTable kindLabel={kind} workloads={items as WorkloadInfo[]} onSelect={onSelect} />
+        <WorkloadTable
+          kindLabel={kind}
+          workloads={items as WorkloadInfo[]}
+          onSelect={onSelect}
+          onDetails={onDetails}
+        />
       )
   }
 }

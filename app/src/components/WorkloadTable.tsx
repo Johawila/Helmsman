@@ -1,3 +1,4 @@
+import { DetailsButton } from '@/components/PodTable'
 import {
   Table,
   TableBody,
@@ -13,9 +14,10 @@ interface WorkloadTableProps {
   kindLabel: string
   workloads: WorkloadInfo[]
   onSelect: (name: string) => void
+  onDetails: (name: string) => void
 }
 
-export default function WorkloadTable({ kindLabel, workloads, onSelect }: WorkloadTableProps) {
+export default function WorkloadTable({ kindLabel, workloads, onSelect, onDetails }: WorkloadTableProps) {
   if (workloads.length === 0) {
     return <p className="text-muted-foreground">No {kindLabel.toLowerCase()} in this namespace.</p>
   }
@@ -29,6 +31,7 @@ export default function WorkloadTable({ kindLabel, workloads, onSelect }: Worklo
           <TableHead className="text-right">Available</TableHead>
           <TableHead>Image</TableHead>
           <TableHead className="text-right">Age</TableHead>
+          <TableHead className="w-8" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -58,6 +61,9 @@ export default function WorkloadTable({ kindLabel, workloads, onSelect }: Worklo
             </TableCell>
             <TableCell className="text-right font-mono text-muted-foreground">
               {formatAge(w.createdAt)}
+            </TableCell>
+            <TableCell>
+              <DetailsButton onClick={() => onDetails(w.name)} />
             </TableCell>
           </TableRow>
         ))}

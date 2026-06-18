@@ -1,3 +1,4 @@
+import { Info } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -13,9 +14,10 @@ interface PodTableProps {
   pods: PodInfo[]
   metrics: Map<string, PodMetricsInfo>
   onSelectPod: (pod: string) => void
+  onDetails: (name: string) => void
 }
 
-export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) {
+export default function PodTable({ pods, metrics, onSelectPod, onDetails }: PodTableProps) {
   if (pods.length === 0) {
     return <p className="text-muted-foreground">No pods in this namespace.</p>
   }
@@ -31,6 +33,7 @@ export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) 
           <TableHead className="text-right">Memory</TableHead>
           <TableHead>Node</TableHead>
           <TableHead className="text-right">Age</TableHead>
+          <TableHead className="w-8" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -74,11 +77,26 @@ export default function PodTable({ pods, metrics, onSelectPod }: PodTableProps) 
               <TableCell className="text-right font-mono text-muted-foreground">
                 {formatAge(pod.createdAt)}
               </TableCell>
+              <TableCell>
+                <DetailsButton onClick={() => onDetails(pod.name)} />
+              </TableCell>
             </TableRow>
           )
         })}
       </TableBody>
     </Table>
+  )
+}
+
+export function DetailsButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Details"
+      className="text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <Info className="size-4" />
+    </button>
   )
 }
 

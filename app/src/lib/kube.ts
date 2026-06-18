@@ -20,6 +20,15 @@ export function podStatus(pod: { status?: string; phase: string }): string {
   return pod.status || pod.phase
 }
 
+// Colour a condition by whether its status reads healthy. Most conditions are "good" when True
+// (Ready, Available), but pressure/problem conditions are "good" when False — so a True there is
+// amber. Keeps the detail drawer readable at a glance.
+export function levelColorForCondition(c: { type: string; status: string }): string {
+  const badWhenTrue = /Pressure|Unschedulable|NetworkUnavailable|Failed/i.test(c.type)
+  const healthy = badWhenTrue ? c.status !== 'True' : c.status === 'True'
+  return healthy ? 'text-foreground' : 'text-amber-400'
+}
+
 // Compact age like kubectl: 45s, 12m, 5h, 3d.
 export function formatAge(isoTimestamp: string | null): string {
   if (!isoTimestamp) {
